@@ -1,0 +1,205 @@
+name: 'PR Cooldown Check'
+description: 'Check if a PR submitter is in cooldown due to suspected spam activity'
+author: 'CNCF'
+
+inputs:
+  service_url:
+    description: 'URL of the PR Cooldown service'
+    required: true
+  github_token:
+    description: 'GitHub token for authentication'
+    required: true
+  action:
+    description: 'Action to take on cooldown: close, close-comment, comment'
+    required: false
+    default: 'close-comment'
+  comment:
+    description: 'Comment template. Supports {duration}, {reason}, {login}'
+    required: false
+    default: 'Suspected spam, auto-closing. @{login} is in cooldown for {duration}.'
+  label:
+    description: 'Label to apply to flagged PRs (optional)'
+    required: false
+    default: ''
+  lookback_days:
+    description: 'Number of days to look back for PR activity'
+    required: false
+    default: '30'
+  escalation_tiers:
+    description: 'Comma-separated escalation tiers in days (0 = permanent ban)'
+    required: false
+    default: '3,7,21'
+  keywords:
+    description: 'Comma-separated spam keywords (should be stored as a secret)'
+    required: false
+    default: ''
+  threshold_new:
+    description: 'Thresholds for new accounts (<90d): keyword_flagged,plain_closed'
+    required: false
+    default: '1,2'
+  threshold_established:
+    description: 'Thresholds for established accounts (90d-2y): keyword_flagged,plain_closed'
+    required: false
+    default: '2,3'
+  threshold_veteran:
+    description: 'Thresholds for veteran accounts (2y+): keyword_flagged,plain_closed'
+    required: false
+    default: '2,4'
+
+outputs:
+  verdict:
+    description: 'The verdict: allow or cooldown'
+  reason:
+    description: 'Reason for the verdict'
+  cooldown_until:
+    description: 'Cooldown expiry timestamp (if applicable)'
+  cooldown_level:
+    description: 'Current cooldown escalation level'
+  account_age_tier:
+    description: 'Account age tier: new, established, or veteran'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Check PR submitter
+      id: check
+      shell: bash
+      env:
+        SERVICE_URL: ${{ inputs.service_url }}
+        GITHUB_TOKEN: ${{ inputs.github_token }}
+        LOOKBACK_DAYS: ${{ inputs.lookback_days }}
+        ESCALATION_TIERS: ${{ inputs.escalation_tiers }}
+        KEYWORDS: ${{ inputs.keywords }}
+        THRESHOLD_NEW: ${{ inputs.threshold_new }}
+        THRESHOLD_ESTABLISHED: ${{ inputs.threshold_established }}
+        THRESHOLD_VETERAN: ${{ inputs.threshold_veteran }}
+        PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        PR_REPO: ${{ github.repository }}
+      run: |
+        # Parse escalation tiers into JSON array
+        IFS=',' read -ra TIERS <<< "$ESCALATION_TIERS"
+        TIERS_JSON=$(printf '%s\n' "${TIERS[@]}" | jq -R 'tonumber' | jq -s '.')
+
+        # Parse keywords into JSON array
+        if [ -n "$KEYWORDS" ]; then
+          IFS=',' read -ra KW_ARR <<< "$KEYWORDS"
+          KW_JSON=$(printf '%s\n' "${KW_ARR[@]}" | jq -R '.' | jq -s '.')
+        else
+          KW_JSON='[]'
+        fi
+
+        # Parse thresholds
+        IFS=',' read -ra T_NEW <<< "$THRESHOLD_NEW"
+        IFS=',' read -ra T_EST <<< "$THRESHOLD_ESTABLISHED"
+        IFS=',' read -ra T_VET <<< "$THRESHOLD_VETERAN"
+
+        # Build request body
+        BODY=$(jq -n \
+          --arg repo "$PR_REPO" \
+          --argjson pr_number "$PR_NUMBER" \
+          --arg pr_author "$PR_AUTHOR" \
+          --argjson lookback_days "$LOOKBACK_DAYS" \
+          --argjson escalation_tiers "$TIERS_JSON" \
+          --argjson keywords "$KW_JSON" \
+          --argjson t_new_kf "${T_NEW[0]}" \
+          --argjson t_new_pc "${T_NEW[1]}" \
+          --argjson t_est_kf "${T_EST[0]}" \
+          --argjson t_est_pc "${T_EST[1]}" \
+          --argjson t_vet_kf "${T_VET[0]}" \
+          --argjson t_vet_pc "${T_VET[1]}" \
+          '{
+            repo: $repo,
+            pr_number: $pr_number,
+            pr_author: $pr_author,
+            lookback_days: $lookback_days,
+            escalation_tiers: $escalation_tiers,
+            keywords: $keywords,
+            thresholds: {
+              new:         { keyword_flagged: $t_new_kf, plain_closed: $t_new_pc },
+              established: { keyword_flagged: $t_est_kf, plain_closed: $t_est_pc },
+              veteran:     { keyword_flagged: $t_vet_kf, plain_closed: $t_vet_pc }
+            }
+          }')
+
+        # Call the service
+        RESPONSE=$(curl -s -w "\n%{http_code}" \
+          -X POST "${SERVICE_URL}/check" \
+          -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+          -H "Content-Type: application/json" \
+          -d "$BODY")
+
+        HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+        RESPONSE_BODY=$(echo "$RESPONSE" | sed '$d')
+
+        if [ "$HTTP_CODE" != "200" ]; then
+          echo "::error::PR Cooldown service returned HTTP $HTTP_CODE: $RESPONSE_BODY"
+          exit 1
+        fi
+
+        # Parse response
+        VERDICT=$(echo "$RESPONSE_BODY" | jq -r '.verdict')
+        REASON=$(echo "$RESPONSE_BODY" | jq -r '.reason // ""')
+        COOLDOWN_UNTIL=$(echo "$RESPONSE_BODY" | jq -r '.cooldown_until // ""')
+        COOLDOWN_LEVEL=$(echo "$RESPONSE_BODY" | jq -r '.cooldown_level // ""')
+        ACCOUNT_AGE_TIER=$(echo "$RESPONSE_BODY" | jq -r '.account_age_tier // ""')
+
+        # Set outputs
+        echo "verdict=$VERDICT" >> "$GITHUB_OUTPUT"
+        echo "reason=$REASON" >> "$GITHUB_OUTPUT"
+        echo "cooldown_until=$COOLDOWN_UNTIL" >> "$GITHUB_OUTPUT"
+        echo "cooldown_level=$COOLDOWN_LEVEL" >> "$GITHUB_OUTPUT"
+        echo "account_age_tier=$ACCOUNT_AGE_TIER" >> "$GITHUB_OUTPUT"
+
+        echo "Verdict: $VERDICT"
+        if [ "$VERDICT" = "cooldown" ]; then
+          echo "::warning::PR author $PR_AUTHOR is in cooldown: $REASON"
+        fi
+
+    - name: Execute cooldown action
+      if: steps.check.outputs.verdict == 'cooldown'
+      shell: bash
+      env:
+        ACTION: ${{ inputs.action }}
+        COMMENT_TEMPLATE: ${{ inputs.comment }}
+        LABEL: ${{ inputs.label }}
+        GITHUB_TOKEN: ${{ inputs.github_token }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        PR_REPO: ${{ github.repository }}
+        PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+        COOLDOWN_UNTIL: ${{ steps.check.outputs.cooldown_until }}
+        REASON: ${{ steps.check.outputs.reason }}
+      run: |
+        # Calculate human-readable duration
+        if [ -z "$COOLDOWN_UNTIL" ] || [ "$COOLDOWN_UNTIL" = "null" ]; then
+          DURATION="permanently"
+        else
+          DURATION="until $COOLDOWN_UNTIL"
+        fi
+
+        # Substitute template variables
+        COMMENT="${COMMENT_TEMPLATE//\{login\}/$PR_AUTHOR}"
+        COMMENT="${COMMENT//\{duration\}/$DURATION}"
+        COMMENT="${COMMENT//\{reason\}/$REASON}"
+
+        # Apply label if configured
+        if [ -n "$LABEL" ]; then
+          gh pr edit "$PR_NUMBER" --repo "$PR_REPO" --add-label "$LABEL" || true
+        fi
+
+        case "$ACTION" in
+          close)
+            gh pr close "$PR_NUMBER" --repo "$PR_REPO"
+            ;;
+          close-comment)
+            gh pr comment "$PR_NUMBER" --repo "$PR_REPO" --body "$COMMENT"
+            gh pr close "$PR_NUMBER" --repo "$PR_REPO"
+            ;;
+          comment)
+            gh pr comment "$PR_NUMBER" --repo "$PR_REPO" --body "$COMMENT"
+            ;;
+          *)
+            echo "::error::Unknown action: $ACTION"
+            exit 1
+            ;;
+        esac
