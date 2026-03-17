@@ -4,6 +4,8 @@
 
 | Project | PCC | [Landscape](https://github.com/cncf/landscape/blob/master/landscape.yml) | [CLOMonitor](https://github.com/cncf/clomonitor/blob/main/data/cncf.yaml) | [Maintainers](https://github.com/cncf/foundation/blob/main/project-maintainers.csv) | [DevStats](https://devstats.cncf.io/) | [Artwork](https://github.com/cncf/artwork/blob/main/README.md) |
 |---|---|---|---|---|---|---|
+| Kyverno | graduated | graduated | graduated | graduated | incubating | incubating |
+| Agones | sandbox | - | - | - | - | - |
 | CoHDI | sandbox | sandbox | sandbox | sandbox | sandbox | - |
 | composefs | sandbox | sandbox | sandbox | sandbox | sandbox | - |
 | Copa | sandbox | sandbox | sandbox | sandbox | sandbox | - |
@@ -11,12 +13,14 @@
 | Oxia | sandbox | sandbox | sandbox | sandbox | sandbox | - |
 | Service Mesh Performance | sandbox | archived | - | - | - | archived |
 | TrestleGRC | sandbox | sandbox | - | - | sandbox | - |
+| Velero | sandbox | - | - | - | - | - |
 | <QHTTPX> | forming | - | - | - | - | - |
-| Agones | forming | - | - | - | - | - |
 | AIBrix | forming | - | - | - | - | - |
+| Apicurio Registry | forming | - | - | - | - | - |
 | BLAFS | forming | - | - | - | - | - |
 | Cedar | forming | sandbox | - | sandbox | - | - |
 | CNCF Standards & Specifications | forming | - | - | - | - | - |
+| CNCF Toolbox | forming | - | - | - | - | - |
 | Conveyor CI | forming | - | - | - | - | - |
 | Cruise | forming | - | - | - | - | - |
 | CubeCOS | forming | - | - | - | - | - |
@@ -24,21 +28,22 @@
 | DevOps AI Toolkit | forming | - | - | - | - | - |
 | Dexfile | forming | - | - | - | - | - |
 | Gthulhu | forming | - | - | - | - | - |
-| Higress | forming | - | - | - | - | - |
-| KAI Scheduler | forming | - | - | sandbox | sandbox | - |
+| Higress | forming | sandbox | - | - | - | - |
+| KAI Scheduler | forming | sandbox | - | sandbox | sandbox | - |
 | Kmesh | forming | sandbox | sandbox | sandbox | sandbox | sandbox |
 | ksctl | forming | - | - | - | - | - |
+| kube-bind | forming | - | - | - | - | - |
 | KubeElasti | forming | sandbox | - | sandbox | sandbox | - |
 | llm-d | forming | - | - | - | - | - |
 | NMstate | forming | - | - | - | - | - |
 | OpenEverest | forming | - | - | - | - | - |
 | OptiFlow (AI‑OrchestrateX) | forming | - | - | - | - | - |
 | Schema Driven Configuration | forming | - | - | - | - | - |
+| SecureBuild | forming | - | - | - | - | - |
 | SemaMesh | forming | - | - | - | - | - |
 | Sermant | forming | sandbox | sandbox | sandbox | sandbox | sandbox |
 | ServiceRadar | forming | - | - | - | - | - |
 | Terrascan | forming | - | - | - | - | - |
-| Velero | forming | - | - | - | - | - |
 | Brigade | archived | archived | - | - | - | archived |
 | CNI-Genie | archived | archived | - | - | - | - |
 | Curiefense | archived | archived | - | - | - | archived |
@@ -64,7 +69,6 @@
 | SuperEdge | archived | archived | - | - | - | archived |
 | Teller | archived | archived | - | - | - | archived |
 | Xline | archived | archived | - | - | - | archived |
-| CNCF Toolbox | prospect | - | - | - | - | - |
 
 ## Graduated
 
@@ -95,6 +99,7 @@
 | Knative | graduated | graduated | graduated | graduated | graduated | graduated |
 | KubeEdge | graduated | graduated | graduated | graduated | graduated | graduated |
 | Kubernetes | graduated | graduated | graduated | graduated | graduated | graduated |
+| Kyverno | graduated | graduated | graduated | graduated | incubating | incubating |
 | Linkerd | graduated | graduated | graduated | graduated | graduated | graduated |
 | Open Policy Agent | graduated | graduated | graduated | graduated | graduated | graduated |
 | Prometheus | graduated | graduated | graduated | graduated | graduated | graduated |
@@ -128,7 +133,6 @@
 | Kubescape | incubating | incubating | incubating | incubating | incubating | incubating |
 | KubeVela | incubating | incubating | incubating | incubating | incubating | incubating |
 | KubeVirt | incubating | incubating | incubating | incubating | incubating | incubating |
-| Kyverno | incubating | incubating | incubating | incubating | incubating | incubating |
 | Lima | incubating | incubating | incubating | incubating | incubating | incubating |
 | LitmusChaos | incubating | incubating | incubating | incubating | incubating | incubating |
 | Longhorn | incubating | incubating | incubating | incubating | incubating | incubating |
@@ -152,6 +156,7 @@
 | Project | PCC | [Landscape](https://github.com/cncf/landscape/blob/master/landscape.yml) | [CLOMonitor](https://github.com/cncf/clomonitor/blob/main/data/cncf.yaml) | [Maintainers](https://github.com/cncf/foundation/blob/main/project-maintainers.csv) | [DevStats](https://devstats.cncf.io/) | [Artwork](https://github.com/cncf/artwork/blob/main/README.md) |
 |---|---|---|---|---|---|---|
 | Aeraki Mesh | sandbox | sandbox | sandbox | sandbox | sandbox | sandbox |
+| Agones | sandbox | - | - | - | - | - |
 | Akri | sandbox | sandbox | sandbox | sandbox | sandbox | sandbox |
 | Antrea | sandbox | sandbox | sandbox | sandbox | sandbox | sandbox |
 | Armada | sandbox | sandbox | sandbox | sandbox | sandbox | sandbox |
@@ -286,6 +291,7 @@
 | TrestleGRC | sandbox | sandbox | - | - | sandbox | - |
 | Trickster | sandbox | sandbox | sandbox | sandbox | sandbox | sandbox |
 | urunc | sandbox | sandbox | sandbox | sandbox | sandbox | sandbox |
+| Velero | sandbox | - | - | - | - | - |
 | Vineyard | sandbox | sandbox | sandbox | sandbox | sandbox | sandbox |
 | Virtual Kubelet | sandbox | sandbox | sandbox | sandbox | sandbox | sandbox |
 | VS Code Kubernetes Tools | sandbox | sandbox | sandbox | sandbox | sandbox | sandbox |
@@ -300,11 +306,12 @@
 | Project | PCC | [Landscape](https://github.com/cncf/landscape/blob/master/landscape.yml) | [CLOMonitor](https://github.com/cncf/clomonitor/blob/main/data/cncf.yaml) | [Maintainers](https://github.com/cncf/foundation/blob/main/project-maintainers.csv) | [DevStats](https://devstats.cncf.io/) | [Artwork](https://github.com/cncf/artwork/blob/main/README.md) |
 |---|---|---|---|---|---|---|
 | <QHTTPX> | forming | - | - | - | - | - |
-| Agones | forming | - | - | - | - | - |
 | AIBrix | forming | - | - | - | - | - |
+| Apicurio Registry | forming | - | - | - | - | - |
 | BLAFS | forming | - | - | - | - | - |
 | Cedar | forming | sandbox | - | sandbox | - | - |
 | CNCF Standards & Specifications | forming | - | - | - | - | - |
+| CNCF Toolbox | forming | - | - | - | - | - |
 | Conveyor CI | forming | - | - | - | - | - |
 | Cruise | forming | - | - | - | - | - |
 | CubeCOS | forming | - | - | - | - | - |
@@ -312,21 +319,22 @@
 | DevOps AI Toolkit | forming | - | - | - | - | - |
 | Dexfile | forming | - | - | - | - | - |
 | Gthulhu | forming | - | - | - | - | - |
-| Higress | forming | - | - | - | - | - |
-| KAI Scheduler | forming | - | - | sandbox | sandbox | - |
+| Higress | forming | sandbox | - | - | - | - |
+| KAI Scheduler | forming | sandbox | - | sandbox | sandbox | - |
 | Kmesh | forming | sandbox | sandbox | sandbox | sandbox | sandbox |
 | ksctl | forming | - | - | - | - | - |
+| kube-bind | forming | - | - | - | - | - |
 | KubeElasti | forming | sandbox | - | sandbox | sandbox | - |
 | llm-d | forming | - | - | - | - | - |
 | NMstate | forming | - | - | - | - | - |
 | OpenEverest | forming | - | - | - | - | - |
 | OptiFlow (AI‑OrchestrateX) | forming | - | - | - | - | - |
 | Schema Driven Configuration | forming | - | - | - | - | - |
+| SecureBuild | forming | - | - | - | - | - |
 | SemaMesh | forming | - | - | - | - | - |
 | Sermant | forming | sandbox | sandbox | sandbox | sandbox | sandbox |
 | ServiceRadar | forming | - | - | - | - | - |
 | Terrascan | forming | - | - | - | - | - |
-| Velero | forming | - | - | - | - | - |
 
 ## Archived
 
@@ -360,7 +368,5 @@
 
 ## Prospect
 
-| Project | PCC | [Landscape](https://github.com/cncf/landscape/blob/master/landscape.yml) | [CLOMonitor](https://github.com/cncf/clomonitor/blob/main/data/cncf.yaml) | [Maintainers](https://github.com/cncf/foundation/blob/main/project-maintainers.csv) | [DevStats](https://devstats.cncf.io/) | [Artwork](https://github.com/cncf/artwork/blob/main/README.md) |
-|---|---|---|---|---|---|---|
-| CNCF Toolbox | prospect | - | - | - | - | - |
+_No entries._
 

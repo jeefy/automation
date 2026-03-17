@@ -1645,7 +1645,7 @@ landscape:
           - item:
             name: Kyverno
             homepage_url: https://kyverno.io/
-            project: incubating
+            project: graduated
             repo_url: https://github.com/kyverno/kyverno
             logo: kyverno.svg
             twitter: https://twitter.com/kyverno
@@ -1656,6 +1656,7 @@ landscape:
               lfx_slug: kyverno
               accepted: '2020-11-10'
               incubating: '2022-07-13'
+              graduated: '2026-03-16'
               dev_stats_url: https://kyverno.devstats.cncf.io/
               slack_url: https://kubernetes.slack.com/
               chat_channel: '#kyverno'
@@ -3226,10 +3227,10 @@ landscape:
             name: bootc
             description: >-
               The bootc provides transactional, in-place operating system images and updates using OCI/Docker container images. This project applies the Docker container layering model to bootable host systems, using standard OCI/Docker containers as a transport and delivery format for base operating system updates.
-            homepage_url: https://github.com/containers/bootc
-            repo_url: https://github.com/containers/bootc
+            homepage_url: https://bootc-dev.github.io
+            repo_url: https://github.com/bootc-dev/bootc
             project: sandbox
-            logo: cncf.svg
+            logo: bootc.svg
             crunchbase: https://www.crunchbase.com/organization/cloud-native-computing-foundation
             extra:
               lfx_slug: bootc
@@ -4224,6 +4225,17 @@ landscape:
               blog_url: https://kestra.io/blogs
               slack_url: https://kestra.io/slack
               youtube_url: https://www.youtube.com/@kestra-io
+          - item:
+            name: KAI Scheduler
+            description: KAI Scheduler is a robust, efficient, and scalable Kubernetes scheduler that optimizes GPU resource allocation for AI workloads in large-scale clusters.
+            homepage_url: https://github.com/kai-scheduler/KAI-Scheduler
+            project: sandbox
+            project_org: https://github.com/kai-scheduler/
+            repo_url: https://github.com/kai-scheduler/KAI-Scheduler
+            logo: cncf.svg
+            crunchbase: https://www.crunchbase.com/organization/cloud-native-computing-foundation
+            extra:
+              accepted: '2025-12-21'
           - item:
             name: Knative
             description: >-
@@ -5254,9 +5266,12 @@ landscape:
           - item:
             name: Higress
             homepage_url: https://higress.io
+            project: sandbox
             repo_url: https://github.com/alibaba/higress
             logo: higress.svg
-            crunchbase: https://www.crunchbase.com/organization/alibaba-cloud
+            crunchbase: https://www.crunchbase.com/organization/cloud-native-computing-foundation
+            extra:
+              accepted: '2026-03-15'
             second_path:
               - "CNAI / Governance, Policy & Security"
           - item:
@@ -8771,7 +8786,7 @@ landscape:
             homepage_url: https://vcluster.com/
             repo_url: https://github.com/loft-sh/vcluster
             logo: vcluster.svg
-            crunchbase: https://www.crunchbase.com/organization/loft-labs
+            crunchbase: https://www.crunchbase.com/organization/vcluster
           - item:
             name: VMware Tanzu Kubernetes Grid
             description: >-
@@ -11177,6 +11192,16 @@ landscape:
             logo: netis.svg
             crunchbase: https://www.crunchbase.com/organization/netis-technologies-c590
           - item:
+            name: NetObserv
+            description: NetObserv provides CNI-agnostic network observability of Kubernetes clusters.
+            homepage_url: https://netobserv.io/
+            repo_url: https://github.com/netobserv/network-observability-operator
+            logo: netobserv.svg
+            crunchbase: https://www.crunchbase.com/organization/red-hat
+            extra:
+              slack_url: https://cloud-native.slack.com/messages/netobserv-project
+              chat_channel: "#netobserv-project"
+          - item:
             name: New Relic
             homepage_url: https://newrelic.com/
             logo: newrelic.svg
@@ -11775,13 +11800,6 @@ landscape:
             logo: access-quality-presentacion-digital.svg
             crunchbase: https://www.crunchbase.com/organization/access-quality
           - item:
-            name: AccuKnox (KCSP)
-            description: >-
-              Kubernetes is at the core of the cloud native movement. AccuKnox consults and provides services for Kubernetes pods, clusters, containers to make  cloud native deployment safe and resilient against advanced attacks.
-            homepage_url: https://www.accuknox.com/kubernetes-professional-services
-            logo: accuknox.svg
-            crunchbase: https://www.crunchbase.com/organization/accuknox
-          - item:
             name: Agenda (KCSP)
             description: >-
               We provide expert consulting, implementation, and support services for Kubernetes to help organizations streamline operations and  accelerate innovation.
@@ -12321,13 +12339,6 @@ landscape:
             logo: harmonycloud.svg
             crunchbase: https://www.crunchbase.com/organization/harmony-cloud
           - item:
-            name: HCL Technologies (KCSP)
-            description: >-
-              At HCL we enable your complete Cloud Native journey with Kubernetes, offering services that include Kubernetes platform design/build, Applications Migration, Operations and Developer enablement. We cover all leading Kubernetes distributions.
-            homepage_url: https://www.hcltech.com/cloud
-            logo: hcl.svg
-            crunchbase: https://www.crunchbase.com/organization/hcl-technologies
-          - item:
             name: Hidora (KCSP)
             description: >-
               Hidora provides fully managed Kubernetes services, supporting cluster setup, migration, and operations. Hosted in Swiss datacenters, our solutions ensure sovereignty, reliability, and expert local support.
@@ -12410,13 +12421,6 @@ landscape:
             homepage_url: https://www.infosys.com/services/application-modernization/offerings/cloud-migration/cloud-migration-overview.html
             logo: infosys.svg
             crunchbase: https://www.crunchbase.com/organization/infosys
-          - item:
-            name: initializ™ (KCSP)
-            description: >-
-              Initializ helps global companies to get started and then scale with Kubernetes. We can help your organization with Kubernetes Distribution & Management, Service Mesh Deployment & Configuration, Kubernetes Security & Governance Implementation and Application Containerization.
-            homepage_url: https://www.initializ.io/kubernetes-services/
-            logo: initializ.svg
-            crunchbase: https://www.crunchbase.com/organization/initializ
           - item:
             name: Innogrid (KCSP)
             description: 'Innogrid provides the consulting and technical support related to K8s, especially for an optimized migration for customers'' environment. '
@@ -13220,12 +13224,6 @@ landscape:
               training_certifications: cka, ckad, kcna
               training_type: e-learning, instructor-led
           - item:
-            name: D2iQ (KCNTP)
-            description: D2iQ provides comprehensive services, support, and training for Kubernetes.
-            homepage_url: https://d2iq.com/
-            logo: d2iq.svg
-            crunchbase: https://www.crunchbase.com/organization/D2iQ
-          - item:
             name: DaoCloud (KCNTP)
             description: >-
               DaoCloud is an innovative leader in the cloud-native field, being committed to creating an open Cloud OS which enables enterprises to easily carry out digital transformation.  DaoCloud provides excellent courses of KCNA, CKAD, CKA and CKS, with the accumulation of cloud-native technology and examination. These courses can train technical experts in digital transformation.
@@ -13587,12 +13585,6 @@ landscape:
             crunchbase: https://www.crunchbase.com/organization/google
             joined: '2016-01-01'
           - item:
-            name: HCL Technologies (member)
-            homepage_url: https://www.hcltech.com/
-            logo: hcl.svg
-            crunchbase: https://www.crunchbase.com/organization/hcl-technologies
-            joined: '2020-02-01'
-          - item:
             name: Heroku (member)
             homepage_url: https://www.heroku.com
             logo: heroku.svg
@@ -13814,12 +13806,6 @@ landscape:
             logo: access-quality-presentacion-digital.svg
             crunchbase: https://www.crunchbase.com/organization/access-quality
             joined: '2025-06-01'
-          - item:
-            name: AccuKnox (member)
-            homepage_url: https://accuknox.com/
-            logo: accuknox.svg
-            crunchbase: https://www.crunchbase.com/organization/accuknox
-            joined: '2021-05-01'
           - item:
             name: Adobe (member)
             homepage_url: https://www.adobe.com/
@@ -15446,12 +15432,6 @@ landscape:
             crunchbase: https://www.crunchbase.com/organization/jetstack
             joined: '2018-01-01'
           - item:
-            name: JFrog (member)
-            homepage_url: https://jfrog.com/
-            logo: jfrog.svg
-            crunchbase: https://www.crunchbase.com/organization/jfrog-ltd
-            joined: '2017-11-01'
-          - item:
             name: Jozu (member)
             homepage_url: https://jozu.com
             logo: jozu.svg
@@ -15663,11 +15643,11 @@ landscape:
             crunchbase: https://www.crunchbase.com/organization/lockheed-martin
             joined: '2021-11-01'
           - item:
-            name: Loft Labs (member)
-            homepage_url: https://loft.sh
-            logo: loft-labs.svg
-            crunchbase: https://www.crunchbase.com/organization/loft-labs
-            joined: '2020-02-01'
+            name: Lovable (member)
+            homepage_url: https://lovable.dev
+            logo: lovable.svg
+            crunchbase: https://www.crunchbase.com/organization/lovable-803a
+            joined: '2026-03-01'            
           - item:
             name: LSEG (member)
             homepage_url: https://www.lseg.com/en
@@ -16893,6 +16873,13 @@ landscape:
             crunchbase: https://www.crunchbase.com/organization/tcc-consulting-limited
             joined: '2025-07-01'
           - item:
+            name: Teciem (member)
+            homepage_url: https://teciem.com/
+            logo: teciem.svg
+            enduser: true
+            crunchbase: https://www.crunchbase.com/organization/teciem
+            joined: '2026-03-01'             
+          - item:
             name: Telenor Norway (member)
             homepage_url: https://www.telenor.no/privat
             logo: telenor.svg
@@ -17110,6 +17097,12 @@ landscape:
             twitter: https://twitter.com/valvesoftware
             crunchbase: https://www.crunchbase.com/organization/valve-software
             joined: '2021-04-01'
+          - item:
+            name: vCluster (member)
+            homepage_url: https://www.vcluster.com/
+            logo: vcluster.svg
+            crunchbase: https://www.crunchbase.com/organization/vcluster
+            joined: '2020-02-01'            
           - item:
             name: Velocity (member)
             homepage_url: https://velocity.tech/
@@ -18433,6 +18426,13 @@ landscape:
             repo_url: https://github.com/rust-lang/cargo
             logo: cargo.svg
             crunchbase: https://www.crunchbase.com/organization/rust
+          - item:
+            name: elfconv
+            description: An AOT binary translator that converts Linux/ELF binaries to WebAssembly
+            homepage_url: https://yomaytk.github.io/elfconv-demo/
+            repo_url: https://github.com/yomaytk/elfconv
+            logo: elfconv.svg
+            unnamed_organization: true
           - item:
             name: emscripten
             homepage_url: https://emscripten.org
