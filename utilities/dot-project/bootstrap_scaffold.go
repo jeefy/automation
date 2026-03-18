@@ -24,13 +24,13 @@ description: "{{ .Description }}"
 type: "project"
 {{ if .ProjectLead }}project_lead: "{{ .ProjectLead }}"{{ else }}# TODO: Set project lead GitHub handle
 # project_lead: "github-handle"{{ end }}
-{{ if .CNCFSlackChannel }}cncf_slack_channel: "{{ .CNCFSlackChannel }}"{{ else }}# TODO: Set CNCF Slack channel
+{{ if .CNCFSlackChannel }}cncf_slack_channel: "{{ .CNCFSlackChannel }}"{{ if isAutoDetected .Sources "cncf_slack_channel" }} # AUTO-DETECTED — please verify{{ end }}{{ else }}# TODO: Set CNCF Slack channel
 # cncf_slack_channel: "#{{ .Slug }}"{{ end }}
 
 maturity_log:
   - phase: "{{ or .MaturityPhase "sandbox" }}"
     date: "{{ formatTime .AcceptedDate }}"
-    issue: "https://github.com/cncf/toc/issues/XXX" # TODO: Set TOC issue URL
+    {{ if .TOCIssueURL }}issue: "{{ .TOCIssueURL }}"{{ if isAutoDetected .Sources "toc_issue_url" }} # AUTO-DETECTED — please verify{{ end }}{{ else }}issue: "https://github.com/cncf/toc/issues/XXX" # TODO: Set TOC issue URL{{ end }}
 
 repositories:{{ if .Repositories }}{{ range .Repositories }}
   - "{{ . }}"{{ end }}{{ else }}
@@ -74,8 +74,9 @@ legal:
   license:
     path: "{{ if .LicenseURL }}{{ .LicenseURL }}{{ else }}{{ githubFileURL .GitHubOrg (or .GitHubRepo .Slug) "" "LICENSE" }}{{ end }}"
   identity_type:
-    has_dco: true
-    has_cla: false
+{{ if isAutoDetected .Sources "identity_type" }}    has_dco: {{ .HasDCO }} # AUTO-DETECTED — please verify
+    has_cla: {{ .HasCLA }} # AUTO-DETECTED — please verify{{ else }}    has_dco: true
+    has_cla: false{{ end }}
     dco_url:
       path: "https://developercertificate.org/"
 {{ if .HasReadme }}
@@ -247,6 +248,13 @@ var templateFuncs = template.FuncMap{
 	},
 	"artworkURL": func(slug string) string {
 		return fmt.Sprintf("https://github.com/cncf/artwork/tree/master/projects/%s", slug)
+	},
+	"isAutoDetected": func(sources map[string]string, key string) bool {
+		if sources == nil {
+			return false
+		}
+		_, ok := sources[key]
+		return ok
 	},
 }
 

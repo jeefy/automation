@@ -30,6 +30,18 @@
 
 set -euo pipefail
 
+# Load .env from CWD if present (KEY=VALUE, skips comments and blank lines)
+if [[ -f .env ]]; then
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        # Skip blank lines and comments
+        [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
+        # Export only valid KEY=VALUE lines (no eval, no command substitution)
+        if [[ "$line" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; then
+            export "${line?}"
+        fi
+    done < .env
+fi
+
 # Defaults
 DRY_RUN=false
 SKIP_SECRETS=false

@@ -402,3 +402,134 @@ func TestWriteScaffold_SkipsExistingFiles(t *testing.T) {
 		}
 	})
 }
+
+func TestGenerateProjectYAML_AutoDetected(t *testing.T) {
+	t.Run("uses auto-detected slack channel with verification comment", func(t *testing.T) {
+		result := &BootstrapResult{
+			Slug:             "test-project",
+			Name:             "Test Project",
+			Description:      "A test",
+			GitHubOrg:        "test-org",
+			GitHubRepo:       "test-project",
+			CNCFSlackChannel: "#test-project",
+			Sources:          map[string]string{"cncf_slack_channel": "landscape"},
+		}
+
+		output, err := GenerateProjectYAML(result)
+		if err != nil {
+			t.Fatalf("error = %v", err)
+		}
+		yamlStr := string(output)
+
+		if !strings.Contains(yamlStr, `cncf_slack_channel: "#test-project"`) {
+			t.Error("should contain cncf_slack_channel value")
+		}
+		if !strings.Contains(yamlStr, "AUTO-DETECTED") {
+			t.Error("should contain AUTO-DETECTED verification comment")
+		}
+	})
+
+	t.Run("uses auto-detected TOC issue URL", func(t *testing.T) {
+		result := &BootstrapResult{
+			Slug:          "test-project",
+			Name:          "Test Project",
+			Description:   "A test",
+			GitHubOrg:     "test-org",
+			GitHubRepo:    "test-project",
+			MaturityPhase: "sandbox",
+			TOCIssueURL:   "https://github.com/cncf/toc/pull/1143",
+			Sources:       map[string]string{"toc_issue_url": "landscape"},
+		}
+
+		output, err := GenerateProjectYAML(result)
+		if err != nil {
+			t.Fatalf("error = %v", err)
+		}
+		yamlStr := string(output)
+
+		if !strings.Contains(yamlStr, "https://github.com/cncf/toc/pull/1143") {
+			t.Error("should contain auto-detected TOC URL")
+		}
+		if strings.Contains(yamlStr, "cncf/toc/issues/XXX") {
+			t.Error("should NOT contain placeholder XXX when URL was auto-detected")
+		}
+	})
+
+	t.Run("uses auto-detected DCO/CLA values", func(t *testing.T) {
+		result := &BootstrapResult{
+			Slug:        "test-project",
+			Name:        "Test Project",
+			Description: "A test",
+			GitHubOrg:   "test-org",
+			GitHubRepo:  "test-project",
+			HasDCO:      true,
+			HasCLA:      false,
+			Sources:     map[string]string{"identity_type": "github"},
+		}
+
+		output, err := GenerateProjectYAML(result)
+		if err != nil {
+			t.Fatalf("error = %v", err)
+		}
+		yamlStr := string(output)
+
+		if !strings.Contains(yamlStr, "has_dco: true") {
+			t.Error("should contain has_dco: true")
+		}
+		if !strings.Contains(yamlStr, "has_cla: false") {
+			t.Error("should contain has_cla: false")
+		}
+		if !strings.Contains(yamlStr, "AUTO-DETECTED") {
+			t.Error("should contain AUTO-DETECTED verification comment for identity_type")
+		}
+	})
+
+	t.Run("keeps TOC placeholder when not auto-detected", func(t *testing.T) {
+		result := &BootstrapResult{
+			Slug:          "test-project",
+			Name:          "Test Project",
+			Description:   "A test",
+			GitHubOrg:     "test-org",
+			GitHubRepo:    "test-project",
+			MaturityPhase: "sandbox",
+			Sources:       map[string]string{},
+		}
+
+		output, err := GenerateProjectYAML(result)
+		if err != nil {
+			t.Fatalf("error = %v", err)
+		}
+		yamlStr := string(output)
+
+		if !strings.Contains(yamlStr, "cncf/toc/issues/XXX") {
+			t.Error("should contain placeholder XXX when TOC URL not auto-detected")
+		}
+	})
+
+	t.Run("uses default identity_type when not auto-detected", func(t *testing.T) {
+		result := &BootstrapResult{
+			Slug:        "test-project",
+			Name:        "Test Project",
+			Description: "A test",
+			GitHubOrg:   "test-org",
+			GitHubRepo:  "test-project",
+			Sources:     map[string]string{},
+		}
+
+		output, err := GenerateProjectYAML(result)
+		if err != nil {
+			t.Fatalf("error = %v", err)
+		}
+		yamlStr := string(output)
+
+		if !strings.Contains(yamlStr, "has_dco: true") {
+			t.Error("should contain default has_dco: true")
+		}
+		if !strings.Contains(yamlStr, "has_cla: false") {
+			t.Error("should contain default has_cla: false")
+		}
+		if strings.Contains(yamlStr, "AUTO-DETECTED") {
+			t.Error("should NOT contain AUTO-DETECTED when identity_type is not auto-detected")
+		}
+	})
+}

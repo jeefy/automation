@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -99,13 +101,14 @@ type landscapeYAMLSubcategory struct {
 
 // landscapeYAMLItem represents an individual project/product item in the landscape.yml.
 type landscapeYAMLItem struct {
-	Name        string `yaml:"name"`
-	Description string `yaml:"description"`
-	HomepageURL string `yaml:"homepage_url"`
-	RepoURL     string `yaml:"repo_url"`
-	Logo        string `yaml:"logo"`
-	Twitter     string `yaml:"twitter"`
-	Project     string `yaml:"project"` // maturity: sandbox, incubating, graduated, archived
+	Name        string                 `yaml:"name"`
+	Description string                 `yaml:"description"`
+	HomepageURL string                 `yaml:"homepage_url"`
+	RepoURL     string                 `yaml:"repo_url"`
+	Logo        string                 `yaml:"logo"`
+	Twitter     string                 `yaml:"twitter"`
+	Project     string                 `yaml:"project"` // maturity: sandbox, incubating, graduated, archived
+	Extra       map[string]interface{} `yaml:"extra,omitempty"`
 }
 
 // fetchFromLandscape fetches the CNCF landscape.yml from GitHub and searches for
@@ -178,16 +181,29 @@ func fetchFromLandscape(name string, client *http.Client, baseURL string) (*Land
 			if iwc.item.Logo != "" {
 				logoURL = landscapeLogoBaseURL + iwc.item.Logo
 			}
+
+			// Extract extra fields
+			slackURL, _ := getExtraString(iwc.item.Extra, "slack_url")
+			chatChannel, _ := getExtraString(iwc.item.Extra, "chat_channel")
+			acceptedDate, _ := getExtraString(iwc.item.Extra, "accepted")
+			annualReviewURL, _ := getExtraString(iwc.item.Extra, "annual_review_url")
+			packageManagerURL, _ := getExtraString(iwc.item.Extra, "package_manager_url")
+
 			return &LandscapeData{
-				Name:        iwc.item.Name,
-				Description: iwc.item.Description,
-				HomepageURL: iwc.item.HomepageURL,
-				RepoURL:     iwc.item.RepoURL,
-				LogoURL:     logoURL,
-				Twitter:     iwc.item.Twitter,
-				Maturity:    iwc.item.Project,
-				Category:    iwc.category,
-				Subcategory: iwc.subcategory,
+				Name:              iwc.item.Name,
+				Description:       iwc.item.Description,
+				HomepageURL:       iwc.item.HomepageURL,
+				RepoURL:           iwc.item.RepoURL,
+				LogoURL:           logoURL,
+				Twitter:           iwc.item.Twitter,
+				Maturity:          iwc.item.Project,
+				Category:          iwc.category,
+				Subcategory:       iwc.subcategory,
+				SlackURL:          slackURL,
+				ChatChannel:       chatChannel,
+				AcceptedDate:      acceptedDate,
+				AnnualReviewURL:   annualReviewURL,
+				PackageManagerURL: packageManagerURL,
 			}, nil
 		}
 	}
@@ -214,6 +230,10 @@ type GitHubData struct {
 	ContributingURL   string `json:"contributing_url,omitempty"`
 	CodeOfConductURL  string `json:"code_of_conduct_url,omitempty"`
 	LicenseURL        string `json:"license_url,omitempty"`
+
+	// Auto-detected identity type signals
+	HasDCO bool `json:"has_dco,omitempty"`
+	HasCLA bool `json:"has_cla,omitempty"`
 }
 
 // fetchFromGitHub fetches repository, organization, community profile, and
@@ -293,6 +313,11 @@ func fetchFromGitHub(org, repo, token string, client *http.Client, baseURL strin
 
 	// Discover governance files from repo root, .github/ dir, and org .github repo
 	discoverGovernanceFiles(result, org, repo, doGet, client)
+
+	// Detect DCO/CLA from commit messages and .github config files
+	hasDCO, hasCLA, _ := detectDCOCLA(org, repo, token, client, baseURL)
+	result.HasDCO = hasDCO
+	result.HasCLA = hasCLA
 
 	return result, nil
 }
@@ -427,6 +452,19 @@ func mergeStringSlices(a, b []string) []string {
 	return result
 }
 
+// getExtraString safely extracts a string value from a landscape item's extra map.
+func getExtraString(extra map[string]interface{}, key string) (string, bool) {
+	if extra == nil {
+		return "", false
+	}
+	v, ok := extra[key]
+	if !ok {
+		return "", false
+	}
+	s, ok := v.(string)
+	return s, ok
+}
+
 // LandscapeData represents data fetched from the CNCF landscape.
 type LandscapeData struct {
 	Name        string `json:"name"`
@@ -438,6 +476,13 @@ type LandscapeData struct {
 	Maturity    string `json:"maturity"`
 	Category    string `json:"category"`
 	Subcategory string `json:"subcategory"`
+
+	// Extra fields from landscape YAML
+	SlackURL          string `json:"slack_url,omitempty"`
+	ChatChannel       string `json:"chat_channel,omitempty"`
+	AcceptedDate      string `json:"accepted_date,omitempty"`
+	AnnualReviewURL   string `json:"annual_review_url,omitempty"`
+	PackageManagerURL string `json:"package_manager_url,omitempty"`
 }
 
 // FetchFromCLOMonitor is the exported wrapper for fetchFromCLOMonitor.
@@ -508,6 +553,132 @@ func fuzzyMatch(query string, candidates []string) (best string, score float64) 
 	}
 
 	return bestCandidate, bestScore
+}
+
+// detectDCOCLA checks recent commits for Signed-off-by lines (DCO) and
+// .github/ directory for CLA config files.
+// Returns (hasDCO, hasCLA, error). Errors are non-fatal; returns (false, false, nil) on failure.
+func detectDCOCLA(org, repo, token string, client *http.Client, baseURL string) (bool, bool, error) {
+	if baseURL == "" {
+		baseURL = defaultGitHubAPIURL
+	}
+
+	doGet := func(path string) (*http.Response, error) {
+		req, err := http.NewRequest("GET", baseURL+path, nil)
+		if err != nil {
+			return nil, err
+		}
+		if token != "" {
+			req.Header.Set("Authorization", "token "+token)
+		}
+		req.Header.Set("Accept", "application/vnd.github.v3+json")
+		return client.Do(req)
+	}
+
+	var hasDCO, hasCLA bool
+
+	// Check recent commits for DCO (Signed-off-by)
+	resp, err := doGet(fmt.Sprintf("/repos/%s/%s/commits?per_page=20", org, repo))
+	if err == nil && resp.StatusCode == http.StatusOK {
+		var commits []struct {
+			Commit struct {
+				Message string `json:"message"`
+			} `json:"commit"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&commits); err == nil {
+			signedCount := 0
+			for _, c := range commits {
+				if strings.Contains(c.Commit.Message, "Signed-off-by:") {
+					signedCount++
+				}
+			}
+			// If >50% of commits have Signed-off-by, likely using DCO
+			if len(commits) > 0 && float64(signedCount)/float64(len(commits)) > 0.5 {
+				hasDCO = true
+			}
+		}
+		resp.Body.Close()
+	} else if resp != nil {
+		resp.Body.Close()
+	}
+
+	// Check for CLA config files in .github/
+	claFiles := []string{"cla.yml", "cla.yaml", ".clabot", "clabot.config"}
+	resp, err = doGet(fmt.Sprintf("/repos/%s/%s/contents/.github", org, repo))
+	if err == nil && resp.StatusCode == http.StatusOK {
+		var entries []GitHubContentEntry
+		if err := json.NewDecoder(resp.Body).Decode(&entries); err == nil {
+			for _, entry := range entries {
+				for _, claFile := range claFiles {
+					if strings.EqualFold(entry.Name, claFile) {
+						hasCLA = true
+						break
+					}
+				}
+			}
+		}
+		resp.Body.Close()
+	} else if resp != nil {
+		resp.Body.Close()
+	}
+
+	return hasDCO, hasCLA, nil
+}
+
+// SearchTOCIssues searches cncf/toc and cncf/sandbox for onboarding or
+// maturity-change issues related to the given project.
+// Returns the best-match issue URL, or "" if none found.
+func SearchTOCIssues(projectName, orgName, token string, client *http.Client, baseURL string) (string, error) {
+	if baseURL == "" {
+		baseURL = defaultGitHubAPIURL
+	}
+
+	// Search queries to try, in order of specificity
+	queries := []string{
+		fmt.Sprintf(`"%s" repo:cncf/sandbox in:title`, projectName),
+		fmt.Sprintf(`"%s" repo:cncf/toc in:title`, projectName),
+		fmt.Sprintf(`"%s" repo:cncf/sandbox in:title`, orgName),
+		fmt.Sprintf(`"%s" repo:cncf/toc in:title`, orgName),
+	}
+
+	for _, q := range queries {
+		req, err := http.NewRequest("GET", baseURL+"/search/issues?q="+url.QueryEscape(q)+"&per_page=5", nil)
+		if err != nil {
+			return "", err
+		}
+		if token != "" {
+			req.Header.Set("Authorization", "token "+token)
+		}
+		req.Header.Set("Accept", "application/vnd.github.v3+json")
+
+		resp, err := client.Do(req)
+		if err != nil {
+			continue
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			continue
+		}
+
+		var searchResult struct {
+			TotalCount int `json:"total_count"`
+			Items      []struct {
+				HTMLURL string `json:"html_url"`
+				Title   string `json:"title"`
+				Number  int    `json:"number"`
+			} `json:"items"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&searchResult); err != nil {
+			continue
+		}
+
+		if searchResult.TotalCount > 0 && len(searchResult.Items) > 0 {
+			return searchResult.Items[0].HTMLURL, nil
+		}
+	}
+
+	return "", nil
 }
 
 // mergeBootstrapData combines data from landscape, CLOMonitor, and GitHub
@@ -620,6 +791,33 @@ func mergeBootstrapData(slug string, landscape *LandscapeData, clomonitor *CLOMo
 		result.Sources["social.twitter"] = "github"
 	}
 
+	// Slack channel: landscape extra.chat_channel > derived from extra.slack_url
+	if landscape != nil && landscape.ChatChannel != "" {
+		result.CNCFSlackChannel = landscape.ChatChannel
+		result.Sources["cncf_slack_channel"] = "landscape"
+	} else if landscape != nil && landscape.SlackURL != "" {
+		// Derive channel name from slack URL: .../messages/<channel-name>
+		parts := strings.Split(landscape.SlackURL, "/messages/")
+		if len(parts) == 2 && parts[1] != "" {
+			result.CNCFSlackChannel = "#" + parts[1]
+			result.Sources["cncf_slack_channel"] = "landscape"
+		}
+	}
+
+	// Accepted date from landscape extra
+	if landscape != nil && landscape.AcceptedDate != "" {
+		if t, err := time.Parse("2006-01-02", landscape.AcceptedDate); err == nil {
+			result.AcceptedDate = t
+			result.Sources["accepted_date"] = "landscape"
+		}
+	}
+
+	// TOC issue URL from landscape annual_review_url (best available automated source)
+	if landscape != nil && landscape.AnnualReviewURL != "" {
+		result.TOCIssueURL = landscape.AnnualReviewURL
+		result.Sources["toc_issue_url"] = "landscape"
+	}
+
 	// CLOMonitor score
 	if clomonitor != nil && clomonitor.Score != nil {
 		result.CLOMonitorScore = clomonitor.Score
@@ -639,6 +837,13 @@ func mergeBootstrapData(slug string, landscape *LandscapeData, clomonitor *CLOMo
 		}
 
 		result.HasAdopters = github.HasAdopters
+
+		// DCO/CLA detection from GitHub
+		result.HasDCO = github.HasDCO
+		result.HasCLA = github.HasCLA
+		if github.HasDCO || github.HasCLA {
+			result.Sources["identity_type"] = "github"
+		}
 
 		// Discovered file URLs
 		if github.SecurityPolicyURL != "" {
@@ -676,10 +881,16 @@ func mergeBootstrapData(slug string, landscape *LandscapeData, clomonitor *CLOMo
 	if len(result.Maintainers) == 0 {
 		result.TODOs = append(result.TODOs, "Add maintainer GitHub handles")
 	}
-	result.TODOs = append(result.TODOs, "Add maturity_log entry with TOC issue URL")
+	if result.TOCIssueURL == "" {
+		result.TODOs = append(result.TODOs, "Add maturity_log entry with TOC issue URL")
+	}
 	result.TODOs = append(result.TODOs, "Set project_lead GitHub handle")
-	result.TODOs = append(result.TODOs, "Set cncf_slack_channel")
-	result.TODOs = append(result.TODOs, "Set identity_type under legal (has_dco, has_cla)")
+	if result.CNCFSlackChannel == "" {
+		result.TODOs = append(result.TODOs, "Set cncf_slack_channel")
+	}
+	if !result.HasDCO && !result.HasCLA {
+		result.TODOs = append(result.TODOs, "Set identity_type under legal (has_dco, has_cla)")
+	}
 	if !result.HasAdopters {
 		result.TODOs = append(result.TODOs, "Add adopters list (ADOPTERS.md)")
 	}

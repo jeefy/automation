@@ -65,6 +65,11 @@ type BootstrapResult struct {
 	HasAdopters      bool   `json:"has_adopters,omitempty" yaml:"has_adopters,omitempty"`
 	IdentityTypeHint string `json:"identity_type_hint,omitempty" yaml:"identity_type_hint,omitempty"` // "dco", "dco+cla", "cla", or ""
 
+	// Auto-detected fields (from landscape extra and GitHub analysis)
+	TOCIssueURL string `json:"toc_issue_url,omitempty" yaml:"toc_issue_url,omitempty"`
+	HasDCO      bool   `json:"has_dco,omitempty" yaml:"has_dco,omitempty"`
+	HasCLA      bool   `json:"has_cla,omitempty" yaml:"has_cla,omitempty"`
+
 	// Source tracking: which fields came from which source
 	Sources map[string]string `json:"sources,omitempty" yaml:"sources,omitempty"`
 
