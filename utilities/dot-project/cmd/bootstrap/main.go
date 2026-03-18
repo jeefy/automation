@@ -157,11 +157,32 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  - project.yaml\n")
 		fmt.Fprintf(os.Stderr, "  - maintainers.yaml\n")
 		fmt.Fprintf(os.Stderr, "  - README.md\n")
-		fmt.Fprintf(os.Stderr, "  - SECURITY.md\n")
+		if result.SecurityPolicyURL == "" {
+			fmt.Fprintf(os.Stderr, "  - SECURITY.md\n")
+		} else {
+			fmt.Fprintf(os.Stderr, "  - SECURITY.md (skipped: using %s)\n", result.SecurityPolicyURL)
+		}
 		fmt.Fprintf(os.Stderr, "  - CODEOWNERS\n")
 		fmt.Fprintf(os.Stderr, "  - .gitignore\n")
 		fmt.Fprintf(os.Stderr, "  - .github/workflows/validate.yaml\n")
 		fmt.Fprintf(os.Stderr, "  - .github/workflows/update-landscape.yml\n")
+
+		// Report discovered file URLs
+		if result.SecurityPolicyURL != "" || result.ContributingURL != "" || result.CodeOfConductURL != "" || result.LicenseURL != "" {
+			fmt.Fprintln(os.Stderr, "\nDiscovered existing files:")
+			if result.SecurityPolicyURL != "" {
+				fmt.Fprintf(os.Stderr, "  SECURITY.md: %s\n", result.SecurityPolicyURL)
+			}
+			if result.ContributingURL != "" {
+				fmt.Fprintf(os.Stderr, "  CONTRIBUTING.md: %s\n", result.ContributingURL)
+			}
+			if result.CodeOfConductURL != "" {
+				fmt.Fprintf(os.Stderr, "  CODE_OF_CONDUCT: %s\n", result.CodeOfConductURL)
+			}
+			if result.LicenseURL != "" {
+				fmt.Fprintf(os.Stderr, "  LICENSE: %s\n", result.LicenseURL)
+			}
+		}
 	}
 
 	// Show TODOs
