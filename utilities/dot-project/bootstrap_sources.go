@@ -300,20 +300,20 @@ func fetchFromGitHub(org, repo, token string, client *http.Client, baseURL strin
 // governanceFile describes a file to look for and how to parse it.
 type governanceFile struct {
 	name      string
-	parseFunc func(data *GitHubData, content string)
+	parseFunc func(data *GitHubData, content string, htmlURL string)
 }
 
 var governanceFiles = []governanceFile{
 	{
 		name: "CODEOWNERS",
-		parseFunc: func(data *GitHubData, content string) {
+		parseFunc: func(data *GitHubData, content string, _ string) {
 			handles := parseCodeowners(content)
 			data.Maintainers = mergeStringSlices(data.Maintainers, handles)
 		},
 	},
 	{
 		name: "OWNERS",
-		parseFunc: func(data *GitHubData, content string) {
+		parseFunc: func(data *GitHubData, content string, _ string) {
 			approvers, reviewers := parseOwnersFile(content)
 			data.Maintainers = mergeStringSlices(data.Maintainers, approvers)
 			data.Reviewers = mergeStringSlices(data.Reviewers, reviewers)
@@ -321,22 +321,30 @@ var governanceFiles = []governanceFile{
 	},
 	{
 		name: "MAINTAINERS",
-		parseFunc: func(data *GitHubData, content string) {
+		parseFunc: func(data *GitHubData, content string, _ string) {
 			handles := parseMaintainersFile(content)
 			data.Maintainers = mergeStringSlices(data.Maintainers, handles)
 		},
 	},
 	{
 		name: "MAINTAINERS.md",
-		parseFunc: func(data *GitHubData, content string) {
+		parseFunc: func(data *GitHubData, content string, _ string) {
 			handles := parseMaintainersFile(content)
 			data.Maintainers = mergeStringSlices(data.Maintainers, handles)
 		},
 	},
 	{
 		name: "ADOPTERS.md",
-		parseFunc: func(data *GitHubData, content string) {
+		parseFunc: func(data *GitHubData, _ string, _ string) {
 			data.HasAdopters = true
+		},
+	},
+	{
+		name: "SECURITY.md",
+		parseFunc: func(data *GitHubData, _ string, htmlURL string) {
+			if data.SecurityPolicyURL == "" {
+				data.SecurityPolicyURL = htmlURL
+			}
 		},
 	},
 }
@@ -372,7 +380,7 @@ func discoverGovernanceFiles(result *GitHubData, org, repo string, doGet func(st
 				if strings.EqualFold(entry.Name, gf.name) && entry.Type == "file" && entry.DownloadURL != "" {
 					content, err := fetchFileContent(client, entry.DownloadURL)
 					if err == nil && content != "" {
-						gf.parseFunc(result, content)
+						gf.parseFunc(result, content, entry.HTMLURL)
 					}
 				}
 			}
@@ -631,6 +639,25 @@ func mergeBootstrapData(slug string, landscape *LandscapeData, clomonitor *CLOMo
 		}
 
 		result.HasAdopters = github.HasAdopters
+
+		// Discovered file URLs
+		if github.SecurityPolicyURL != "" {
+			result.SecurityPolicyURL = github.SecurityPolicyURL
+			result.HasSecurityPolicy = true
+			result.Sources["security_policy"] = "github"
+		}
+		if github.ContributingURL != "" {
+			result.ContributingURL = github.ContributingURL
+			result.Sources["contributing"] = "github"
+		}
+		if github.CodeOfConductURL != "" {
+			result.CodeOfConductURL = github.CodeOfConductURL
+			result.Sources["code_of_conduct"] = "github"
+		}
+		if github.LicenseURL != "" {
+			result.LicenseURL = github.LicenseURL
+			result.Sources["license"] = "github"
+		}
 	}
 
 	// Generate TODOs for missing required fields

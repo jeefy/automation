@@ -710,4 +710,122 @@ func TestMergeBootstrapData(t *testing.T) {
 			t.Errorf("Website = %q, want %q (fallback to GitHub)", result.Website, "https://test.io")
 		}
 	})
+
+	t.Run("propagates discovered file URLs from GitHub", func(t *testing.T) {
+		github := &GitHubData{
+			Repo: &GitHubRepoData{
+				Name:     "test-repo",
+				FullName: "test-org/test-repo",
+				HTMLURL:  "https://github.com/test-org/test-repo",
+			},
+			Org: &GitHubOrgData{
+				Login: "test-org",
+			},
+			SecurityPolicyURL: "https://github.com/test-org/.github/blob/main/SECURITY.md",
+			ContributingURL:   "https://github.com/test-org/test-repo/blob/main/CONTRIBUTING.md",
+			CodeOfConductURL:  "https://github.com/test-org/.github/blob/main/CODE_OF_CONDUCT.md",
+			LicenseURL:        "https://github.com/test-org/test-repo/blob/main/LICENSE",
+		}
+
+		result := mergeBootstrapData("test-project", nil, nil, github)
+
+		if result.SecurityPolicyURL != "https://github.com/test-org/.github/blob/main/SECURITY.md" {
+			t.Errorf("SecurityPolicyURL = %q, want org .github URL", result.SecurityPolicyURL)
+		}
+		if !result.HasSecurityPolicy {
+			t.Error("HasSecurityPolicy should be true when SecurityPolicyURL is set")
+		}
+		if result.ContributingURL != "https://github.com/test-org/test-repo/blob/main/CONTRIBUTING.md" {
+			t.Errorf("ContributingURL = %q, want repo CONTRIBUTING.md URL", result.ContributingURL)
+		}
+		if result.CodeOfConductURL != "https://github.com/test-org/.github/blob/main/CODE_OF_CONDUCT.md" {
+			t.Errorf("CodeOfConductURL = %q, want org CODE_OF_CONDUCT.md URL", result.CodeOfConductURL)
+		}
+		if result.LicenseURL != "https://github.com/test-org/test-repo/blob/main/LICENSE" {
+			t.Errorf("LicenseURL = %q, want repo LICENSE URL", result.LicenseURL)
+		}
+		if result.Sources["security_policy"] != "github" {
+			t.Errorf("Sources[security_policy] = %q, want github", result.Sources["security_policy"])
+		}
+	})
+}
+
+func TestDiscoverSecurityPolicy(t *testing.T) {
+	t.Run("discovers SECURITY.md in repo root", func(t *testing.T) {
+		var serverURL string
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			switch r.URL.Path {
+			case "/repos/test-org/test-repo":
+				json.NewEncoder(w).Encode(GitHubRepoData{Name: "test-repo", FullName: "test-org/test-repo", DefaultBranch: "main"})
+			case "/orgs/test-org":
+				json.NewEncoder(w).Encode(GitHubOrgData{Login: "test-org"})
+			case "/repos/test-org/test-repo/community/profile":
+				json.NewEncoder(w).Encode(GitHubCommunityProfile{})
+			case "/repos/test-org/test-repo/contents/":
+				json.NewEncoder(w).Encode([]GitHubContentEntry{
+					{Name: "SECURITY.md", Path: "SECURITY.md", Type: "file",
+						DownloadURL: serverURL + "/raw/SECURITY.md",
+						HTMLURL:     "https://github.com/test-org/test-repo/blob/main/SECURITY.md"},
+				})
+			case "/raw/SECURITY.md":
+				w.Write([]byte("# Security Policy\nReport vulnerabilities..."))
+			case "/repos/test-org/test-repo/contents/.github":
+				w.WriteHeader(http.StatusNotFound)
+			case "/repos/test-org/.github/contents/":
+				w.WriteHeader(http.StatusNotFound)
+			default:
+				http.NotFound(w, r)
+			}
+		}))
+		defer server.Close()
+		serverURL = server.URL
+
+		result, err := fetchFromGitHub("test-org", "test-repo", "", server.Client(), server.URL)
+		if err != nil {
+			t.Fatalf("fetchFromGitHub() error = %v", err)
+		}
+		if result.SecurityPolicyURL != "https://github.com/test-org/test-repo/blob/main/SECURITY.md" {
+			t.Errorf("SecurityPolicyURL = %q, want repo root SECURITY.md URL", result.SecurityPolicyURL)
+		}
+	})
+
+	t.Run("discovers SECURITY.md in org .github repo", func(t *testing.T) {
+		var serverURL string
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			switch r.URL.Path {
+			case "/repos/test-org/test-repo":
+				json.NewEncoder(w).Encode(GitHubRepoData{Name: "test-repo", FullName: "test-org/test-repo", DefaultBranch: "main"})
+			case "/orgs/test-org":
+				json.NewEncoder(w).Encode(GitHubOrgData{Login: "test-org"})
+			case "/repos/test-org/test-repo/community/profile":
+				json.NewEncoder(w).Encode(GitHubCommunityProfile{})
+			case "/repos/test-org/test-repo/contents/":
+				json.NewEncoder(w).Encode([]GitHubContentEntry{})
+			case "/repos/test-org/test-repo/contents/.github":
+				json.NewEncoder(w).Encode([]GitHubContentEntry{})
+			case "/repos/test-org/.github/contents/":
+				json.NewEncoder(w).Encode([]GitHubContentEntry{
+					{Name: "SECURITY.md", Path: "SECURITY.md", Type: "file",
+						DownloadURL: serverURL + "/raw/org-SECURITY.md",
+						HTMLURL:     "https://github.com/test-org/.github/blob/main/SECURITY.md"},
+				})
+			case "/raw/org-SECURITY.md":
+				w.Write([]byte("# Org Security Policy"))
+			default:
+				http.NotFound(w, r)
+			}
+		}))
+		defer server.Close()
+		serverURL = server.URL
+
+		result, err := fetchFromGitHub("test-org", "test-repo", "", server.Client(), server.URL)
+		if err != nil {
+			t.Fatalf("fetchFromGitHub() error = %v", err)
+		}
+		if result.SecurityPolicyURL != "https://github.com/test-org/.github/blob/main/SECURITY.md" {
+			t.Errorf("SecurityPolicyURL = %q, want org .github SECURITY.md URL", result.SecurityPolicyURL)
+		}
+	})
 }
