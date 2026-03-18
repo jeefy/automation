@@ -1,10 +1,10 @@
-name: Test VM Runner
+name: Test VM Runners
 
 on:
   workflow_dispatch:
     inputs:
       test_gpu:
-        description: 'Test GPU Runner'
+        description: 'Test GPU Runners'
         required: false
         type: choice
         options:
@@ -51,9 +51,26 @@ jobs:
       - name: Run kind cluster
         run: ${{ github.workspace }}/.github/scripts/test_with_kind_cluster.sh
 
-  test-gpu-runner:
+  test-a10-1-gpu-runner:
     runs-on:
       labels: oracle-vm-gpu-a10-1
+      group: GPUs
+    if: ${{ github.event.inputs.test_gpu == 'yes' }}
+    steps:
+      - name: checkout gpus
+        run: |
+          echo "[*] Detailed GPU query"
+          nvidia-smi -q
+
+          echo "[*] Specific information"
+          nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv
+
+          echo "[*] NVIDIA driver version"
+          cat /proc/driver/nvidia/version
+
+  test-a10-2-gpu-runner:
+    runs-on:
+      labels: oracle-vm-gpu-a10-2
       group: GPUs
     if: ${{ github.event.inputs.test_gpu == 'yes' }}
     steps:

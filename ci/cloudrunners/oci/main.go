@@ -25,6 +25,7 @@ var args struct {
 	debug bool
 
 	arch               string
+	region             string
 	compartmentId      string
 	subnetId           string
 	availabilityDomain string
@@ -56,6 +57,9 @@ func run(cmd *cobra.Command, argv []string) error {
 	if err != nil {
 		return fmt.Errorf("failed to create network client: %w", err)
 	}
+
+	computeClient.SetRegion(args.region)
+	networkClient.SetRegion(args.region)
 
 	// List Images and retrieve the latest ID by type and arch
 
@@ -206,6 +210,12 @@ func init() {
 		"arch",
 		"x86",
 		"Machine architecture",
+	)
+	flags.StringVar(
+		&args.region,
+		"region",
+		"us-sanjose-1",
+		"OCI region",
 	)
 	flags.StringVar(
 		&args.availabilityDomain,
