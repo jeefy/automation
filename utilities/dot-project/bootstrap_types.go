@@ -55,8 +55,15 @@ type BootstrapResult struct {
 	HasReadme          bool   `json:"has_readme,omitempty" yaml:"has_readme,omitempty"`
 	HasSecurityPolicy  bool   `json:"has_security_policy,omitempty" yaml:"has_security_policy,omitempty"`
 	SecurityContactURL string `json:"security_contact_url,omitempty" yaml:"security_contact_url,omitempty"`
-	HasAdopters        bool   `json:"has_adopters,omitempty" yaml:"has_adopters,omitempty"`
-	IdentityTypeHint   string `json:"identity_type_hint,omitempty" yaml:"identity_type_hint,omitempty"` // "dco", "dco+cla", "cla", or ""
+
+	// Discovered file locations (resolved from GitHub, including org-level .github inheritance)
+	SecurityPolicyURL string `json:"security_policy_url,omitempty" yaml:"security_policy_url,omitempty"`
+	ContributingURL   string `json:"contributing_url,omitempty" yaml:"contributing_url,omitempty"`
+	CodeOfConductURL  string `json:"code_of_conduct_url,omitempty" yaml:"code_of_conduct_url,omitempty"`
+	LicenseURL        string `json:"license_url,omitempty" yaml:"license_url,omitempty"`
+
+	HasAdopters      bool   `json:"has_adopters,omitempty" yaml:"has_adopters,omitempty"`
+	IdentityTypeHint string `json:"identity_type_hint,omitempty" yaml:"identity_type_hint,omitempty"` // "dco", "dco+cla", "cla", or ""
 
 	// Source tracking: which fields came from which source
 	Sources map[string]string `json:"sources,omitempty" yaml:"sources,omitempty"`
@@ -141,25 +148,32 @@ type GitHubOrgData struct {
 	Email       string `json:"email"`
 }
 
+// CommunityHealthFile represents a community health file with API and browser URLs.
+type CommunityHealthFile struct {
+	URL     string `json:"url"`
+	HTMLURL string `json:"html_url"`
+}
+
 // GitHubCommunityProfile holds the community health profile from GitHub.
 type GitHubCommunityProfile struct {
 	HealthPercentage int `json:"health_percentage"`
 	Files            struct {
 		CodeOfConduct *struct {
-			URL string `json:"url"`
+			URL     string `json:"url"`
+			Key     string `json:"key"`
+			Name    string `json:"name"`
+			HTMLURL string `json:"html_url"`
 		} `json:"code_of_conduct"`
-		Contributing *struct {
-			URL string `json:"url"`
-		} `json:"contributing"`
-		License *struct {
-			Key    string `json:"key"`
-			Name   string `json:"name"`
-			SPDXID string `json:"spdx_id"`
-			URL    string `json:"url"`
+		CodeOfConductFile *CommunityHealthFile `json:"code_of_conduct_file"`
+		Contributing      *CommunityHealthFile `json:"contributing"`
+		License           *struct {
+			Key     string `json:"key"`
+			Name    string `json:"name"`
+			SPDXID  string `json:"spdx_id"`
+			URL     string `json:"url"`
+			HTMLURL string `json:"html_url"`
 		} `json:"license"`
-		Readme *struct {
-			URL string `json:"url"`
-		} `json:"readme"`
+		Readme *CommunityHealthFile `json:"readme"`
 	} `json:"files"`
 	Description           string `json:"description"`
 	ContentReportsEnabled bool   `json:"content_reports_enabled"`
@@ -171,4 +185,5 @@ type GitHubContentEntry struct {
 	Path        string `json:"path"`
 	Type        string `json:"type"` // "file" or "dir"
 	DownloadURL string `json:"download_url"`
+	HTMLURL     string `json:"html_url"`
 }

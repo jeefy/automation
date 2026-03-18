@@ -208,6 +208,12 @@ type GitHubData struct {
 	Maintainers []string                `json:"maintainers,omitempty"`
 	Reviewers   []string                `json:"reviewers,omitempty"`
 	HasAdopters bool                    `json:"has_adopters,omitempty"`
+
+	// Discovered file URLs (from Community Profile or governance file scan)
+	SecurityPolicyURL string `json:"security_policy_url,omitempty"`
+	ContributingURL   string `json:"contributing_url,omitempty"`
+	CodeOfConductURL  string `json:"code_of_conduct_url,omitempty"`
+	LicenseURL        string `json:"license_url,omitempty"`
 }
 
 // fetchFromGitHub fetches repository, organization, community profile, and
@@ -269,6 +275,19 @@ func fetchFromGitHub(org, repo, token string, client *http.Client, baseURL strin
 			if err := json.NewDecoder(resp.Body).Decode(&community); err == nil {
 				result.Community = &community
 			}
+		}
+	}
+
+	// Extract file URLs from community profile
+	if result.Community != nil {
+		if f := result.Community.Files.Contributing; f != nil && f.HTMLURL != "" {
+			result.ContributingURL = f.HTMLURL
+		}
+		if f := result.Community.Files.CodeOfConductFile; f != nil && f.HTMLURL != "" {
+			result.CodeOfConductURL = f.HTMLURL
+		}
+		if f := result.Community.Files.License; f != nil && f.HTMLURL != "" {
+			result.LicenseURL = f.HTMLURL
 		}
 	}
 

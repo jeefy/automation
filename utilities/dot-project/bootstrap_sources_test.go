@@ -292,6 +292,53 @@ func TestFetchFromGitHub(t *testing.T) {
 	})
 }
 
+func TestCommunityProfileHTMLURLs(t *testing.T) {
+	t.Run("captures html_url from community profile files", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			switch r.URL.Path {
+			case "/repos/test-org/test-repo":
+				json.NewEncoder(w).Encode(GitHubRepoData{Name: "test-repo", FullName: "test-org/test-repo", DefaultBranch: "main"})
+			case "/orgs/test-org":
+				json.NewEncoder(w).Encode(GitHubOrgData{Login: "test-org"})
+			case "/repos/test-org/test-repo/community/profile":
+				w.Write([]byte(`{
+					"health_percentage": 90,
+					"files": {
+						"code_of_conduct": {"key": "contributor_covenant", "name": "Contributor Covenant", "url": "https://api.github.com/codes_of_conduct/contributor_covenant", "html_url": "https://github.com/test-org/.github/blob/main/CODE_OF_CONDUCT.md"},
+						"code_of_conduct_file": {"url": "https://api.github.com/repos/test-org/.github/contents/CODE_OF_CONDUCT.md", "html_url": "https://github.com/test-org/.github/blob/main/CODE_OF_CONDUCT.md"},
+						"contributing": {"url": "https://api.github.com/repos/test-org/test-repo/contents/CONTRIBUTING.md", "html_url": "https://github.com/test-org/test-repo/blob/main/CONTRIBUTING.md"},
+						"license": {"key": "apache-2.0", "name": "Apache License 2.0", "spdx_id": "Apache-2.0", "url": "https://api.github.com/licenses/apache-2.0", "html_url": "https://github.com/test-org/test-repo/blob/main/LICENSE"}
+					}
+				}`))
+			case "/repos/test-org/test-repo/contents/":
+				json.NewEncoder(w).Encode([]GitHubContentEntry{})
+			case "/repos/test-org/test-repo/contents/.github":
+				w.WriteHeader(http.StatusNotFound)
+			case "/repos/test-org/.github/contents/":
+				w.WriteHeader(http.StatusNotFound)
+			default:
+				http.NotFound(w, r)
+			}
+		}))
+		defer server.Close()
+
+		result, err := fetchFromGitHub("test-org", "test-repo", "", server.Client(), server.URL)
+		if err != nil {
+			t.Fatalf("fetchFromGitHub() error = %v", err)
+		}
+		if result.ContributingURL != "https://github.com/test-org/test-repo/blob/main/CONTRIBUTING.md" {
+			t.Errorf("ContributingURL = %q, want CONTRIBUTING.md html_url", result.ContributingURL)
+		}
+		if result.CodeOfConductURL != "https://github.com/test-org/.github/blob/main/CODE_OF_CONDUCT.md" {
+			t.Errorf("CodeOfConductURL = %q, want CODE_OF_CONDUCT.md html_url", result.CodeOfConductURL)
+		}
+		if result.LicenseURL != "https://github.com/test-org/test-repo/blob/main/LICENSE" {
+			t.Errorf("LicenseURL = %q, want LICENSE html_url", result.LicenseURL)
+		}
+	})
+}
+
 func TestFetchFromLandscape(t *testing.T) {
 	t.Run("finds project by name", func(t *testing.T) {
 		landscapeYAML := `landscape:
