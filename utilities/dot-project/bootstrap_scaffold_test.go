@@ -103,6 +103,49 @@ func TestGenerateProjectYAML(t *testing.T) {
 		}
 	})
 
+	t.Run("uses discovered URLs instead of defaults", func(t *testing.T) {
+		result := &BootstrapResult{
+			Slug:              "test-project",
+			Name:              "Test Project",
+			Description:       "A test project",
+			GitHubOrg:         "test-org",
+			GitHubRepo:        "test-project",
+			MaturityPhase:     "sandbox",
+			Repositories:      []string{"https://github.com/test-org/test-project"},
+			SecurityPolicyURL: "https://github.com/test-org/.github/blob/main/SECURITY.md",
+			ContributingURL:   "https://github.com/test-org/.github/blob/main/CONTRIBUTING.md",
+			CodeOfConductURL:  "https://github.com/test-org/.github/blob/main/CODE_OF_CONDUCT.md",
+			LicenseURL:        "https://github.com/test-org/test-project/blob/main/LICENSE",
+		}
+
+		output, err := GenerateProjectYAML(result)
+		if err != nil {
+			t.Fatalf("GenerateProjectYAML() error = %v", err)
+		}
+
+		yamlStr := string(output)
+
+		// Security policy should use discovered org-level URL
+		if !strings.Contains(yamlStr, "https://github.com/test-org/.github/blob/main/SECURITY.md") {
+			t.Error("security.policy.path should use discovered org-level SECURITY.md URL")
+		}
+		// Contributing should use discovered URL
+		if !strings.Contains(yamlStr, "https://github.com/test-org/.github/blob/main/CONTRIBUTING.md") {
+			t.Error("governance.contributing.path should use discovered CONTRIBUTING.md URL")
+		}
+		// Code of conduct should use discovered URL instead of CNCF default
+		if !strings.Contains(yamlStr, "https://github.com/test-org/.github/blob/main/CODE_OF_CONDUCT.md") {
+			t.Error("governance.code_of_conduct.path should use discovered CODE_OF_CONDUCT.md URL")
+		}
+		if strings.Contains(yamlStr, "cncf/foundation/blob/main/code-of-conduct.md") {
+			t.Error("governance.code_of_conduct.path should NOT contain CNCF default when discovered URL exists")
+		}
+		// License should use discovered URL
+		if !strings.Contains(yamlStr, "https://github.com/test-org/test-project/blob/main/LICENSE") {
+			t.Error("legal.license.path should use discovered LICENSE URL")
+		}
+	})
+
 	t.Run("round-trip: generate and validate", func(t *testing.T) {
 		result := &BootstrapResult{
 			Slug:          "roundtrip-test",
@@ -297,6 +340,65 @@ func TestWriteScaffold(t *testing.T) {
 		data, _ := os.ReadFile(filepath.Join(dir, "project.yaml"))
 		if string(data) != existingContent {
 			t.Error("existing file was overwritten")
+		}
+	})
+}
+
+func TestWriteScaffold_SkipsExistingFiles(t *testing.T) {
+	t.Run("skips SECURITY.md when SecurityPolicyURL is set", func(t *testing.T) {
+		dir := t.TempDir()
+		result := &BootstrapResult{
+			Slug:              "test-project",
+			Name:              "Test Project",
+			Description:       "A test project",
+			GitHubOrg:         "test-org",
+			GitHubRepo:        "test-project",
+			MaturityPhase:     "sandbox",
+			Repositories:      []string{"https://github.com/test-org/test-project"},
+			Maintainers:       []string{"alice"},
+			SecurityPolicyURL: "https://github.com/test-org/.github/blob/main/SECURITY.md",
+		}
+
+		err := WriteScaffold(dir, result)
+		if err != nil {
+			t.Fatalf("WriteScaffold() error = %v", err)
+		}
+
+		// SECURITY.md should NOT be created
+		if _, err := os.Stat(filepath.Join(dir, "SECURITY.md")); !os.IsNotExist(err) {
+			t.Error("SECURITY.md should NOT be created when SecurityPolicyURL is set")
+		}
+
+		// Other files should still exist
+		for _, f := range []string{"project.yaml", "maintainers.yaml", "README.md", "CODEOWNERS"} {
+			if _, err := os.Stat(filepath.Join(dir, f)); os.IsNotExist(err) {
+				t.Errorf("%s should still be created", f)
+			}
+		}
+	})
+
+	t.Run("skips CODEOWNERS when it already exists on disk", func(t *testing.T) {
+		dir := t.TempDir()
+		existingContent := "* @existing-owner\n"
+		os.WriteFile(filepath.Join(dir, "CODEOWNERS"), []byte(existingContent), 0644)
+
+		result := &BootstrapResult{
+			Slug:        "test-project",
+			Name:        "Test Project",
+			GitHubOrg:   "test-org",
+			GitHubRepo:  "test-project",
+			Maintainers: []string{"alice"},
+		}
+
+		err := WriteScaffold(dir, result)
+		if err != nil {
+			t.Fatalf("WriteScaffold() error = %v", err)
+		}
+
+		// CODEOWNERS should be preserved (not overwritten)
+		data, _ := os.ReadFile(filepath.Join(dir, "CODEOWNERS"))
+		if string(data) != existingContent {
+			t.Errorf("CODEOWNERS was overwritten; got %q, want %q", string(data), existingContent)
 		}
 	})
 }

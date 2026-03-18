@@ -58,7 +58,7 @@ social:{{ range $platform, $url := .Social }}
 
 security:
   policy:
-    path: "{{ githubFileURL .GitHubOrg (or .GitHubRepo .Slug) "" "SECURITY.md" }}"{{ if .SecurityContactURL }}
+    path: "{{ if .SecurityPolicyURL }}{{ .SecurityPolicyURL }}{{ else }}{{ githubFileURL .GitHubOrg (or .GitHubRepo .Slug) "" "SECURITY.md" }}{{ end }}"{{ if .SecurityContactURL }}
   contact:
     advisory_url: "{{ .SecurityContactURL }}"{{ else }}
   contact:
@@ -66,13 +66,13 @@ security:
 
 governance:
   contributing:
-    path: "{{ githubFileURL .GitHubOrg (or .GitHubRepo .Slug) "" "CONTRIBUTING.md" }}"
+    path: "{{ if .ContributingURL }}{{ .ContributingURL }}{{ else }}{{ githubFileURL .GitHubOrg (or .GitHubRepo .Slug) "" "CONTRIBUTING.md" }}{{ end }}"
   code_of_conduct:
-    path: "https://github.com/cncf/foundation/blob/main/code-of-conduct.md"
+    path: "{{ if .CodeOfConductURL }}{{ .CodeOfConductURL }}{{ else }}https://github.com/cncf/foundation/blob/main/code-of-conduct.md{{ end }}"
 
 legal:
   license:
-    path: "{{ githubFileURL .GitHubOrg (or .GitHubRepo .Slug) "" "LICENSE" }}"
+    path: "{{ if .LicenseURL }}{{ .LicenseURL }}{{ else }}{{ githubFileURL .GitHubOrg (or .GitHubRepo .Slug) "" "LICENSE" }}{{ end }}"
   identity_type:
     has_dco: true
     has_cla: false
@@ -345,15 +345,24 @@ func WriteScaffold(dir string, result *BootstrapResult) error {
 		generate func() ([]byte, error)
 	}
 
+	// Core files: always generated
 	files := []scaffoldFile{
 		{"project.yaml", func() ([]byte, error) { return GenerateProjectYAML(result) }},
 		{"maintainers.yaml", func() ([]byte, error) { return GenerateMaintainersYAML(result) }},
 		{"README.md", tmplGen("readme", readmeTemplate)},
-		{"SECURITY.md", tmplGen("security", securityMDTemplate)},
-		{"CODEOWNERS", tmplGen("codeowners", codeownersTemplate)},
 		{".gitignore", staticGen(gitignoreContent)},
 		{".github/workflows/validate.yaml", staticGen(validateWorkflowContent)},
 		{".github/workflows/update-landscape.yml", staticGen(updateLandscapeWorkflowContent)},
+	}
+
+	// Conditional: SECURITY.md — skip if an existing security policy was discovered
+	if result.SecurityPolicyURL == "" {
+		files = append(files, scaffoldFile{"SECURITY.md", tmplGen("security", securityMDTemplate)})
+	}
+
+	// Conditional: CODEOWNERS — skip if it already exists on disk
+	if _, err := os.Stat(filepath.Join(dir, "CODEOWNERS")); os.IsNotExist(err) {
+		files = append(files, scaffoldFile{"CODEOWNERS", tmplGen("codeowners", codeownersTemplate)})
 	}
 
 	// Protect against overwriting core metadata files
