@@ -86,7 +86,7 @@ type CLOMonitorProject struct {
 	HomeURL      string           `json:"home_url"`
 	LogoURL      string           `json:"logo_url"`
 	DevStatsURL  string           `json:"devstats_url"`
-	AcceptedAt   string           `json:"accepted_at"`
+	AcceptedAt   int64            `json:"accepted_at"`
 	Maturity     string           `json:"maturity"`
 	Foundation   string           `json:"foundation"`
 	Category     string           `json:"category"`
@@ -94,7 +94,7 @@ type CLOMonitorProject struct {
 	Score        *CLOMonitorScore `json:"score"`
 	Repositories []CLOMonitorRepo `json:"repositories"`
 	Rating       string           `json:"rating"`
-	UpdatedAt    string           `json:"updated_at"`
+	UpdatedAt    int64            `json:"updated_at"`
 }
 
 // CLOMonitorRepo represents a repository within a CLOMonitor project.

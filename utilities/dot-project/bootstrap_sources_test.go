@@ -134,6 +134,42 @@ func TestFetchFromCLOMonitor(t *testing.T) {
 			t.Fatal("expected error for server error")
 		}
 	})
+
+	t.Run("handles numeric accepted_at and updated_at from API", func(t *testing.T) {
+		// The real CLOMonitor API returns accepted_at and updated_at as Unix
+		// timestamps (integers), not strings. This test sends raw JSON matching
+		// the real API format to verify unmarshalling works.
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`[{
+				"name": "aeraki-mesh",
+				"display_name": "Aeraki Mesh",
+				"description": "Manage any layer-7 protocol in Istio service mesh",
+				"home_url": "https://aeraki.net",
+				"maturity": "sandbox",
+				"foundation": "cncf",
+				"accepted_at": 1592438400,
+				"updated_at": 1773817304,
+				"category": "Orchestration & Management",
+				"subcategory": "Service Mesh"
+			}]`))
+		}))
+		defer server.Close()
+
+		result, err := fetchFromCLOMonitor("Aeraki Mesh", server.Client(), server.URL)
+		if err != nil {
+			t.Fatalf("fetchFromCLOMonitor() error = %v", err)
+		}
+		if result == nil {
+			t.Fatal("fetchFromCLOMonitor() returned nil")
+		}
+		if result.AcceptedAt != 1592438400 {
+			t.Errorf("AcceptedAt = %d, want 1592438400", result.AcceptedAt)
+		}
+		if result.UpdatedAt != 1773817304 {
+			t.Errorf("UpdatedAt = %d, want 1773817304", result.UpdatedAt)
+		}
+	})
 }
 
 func TestFetchFromGitHub(t *testing.T) {
