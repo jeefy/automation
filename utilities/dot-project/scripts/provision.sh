@@ -158,17 +158,7 @@ provision_project() {
             || die "Bootstrap failed for ${name}"
     fi
 
-    # Step 4: Add Apache 2.0 LICENSE if not present
-    if [[ ! -f "${tmp_dir}/LICENSE" ]]; then
-        if dry "would download Apache 2.0 LICENSE"; then
-            :
-        else
-            info "  Downloading Apache 2.0 LICENSE..."
-            curl -sL "https://www.apache.org/licenses/LICENSE-2.0.txt" > "${tmp_dir}/LICENSE"
-        fi
-    fi
-
-    # Step 5: Commit and push
+    # Step 4: Commit and push
     if dry "would commit and push to ${target_repo}"; then
         :
     else
@@ -183,7 +173,7 @@ provision_project() {
             || die "Failed to push to ${target_repo}"
     fi
 
-    # Step 6: Set secrets
+    # Step 5: Set secrets
     if ! $SKIP_SECRETS; then
         if dry "would set secrets on ${target_repo}"; then
             :
@@ -198,7 +188,7 @@ provision_project() {
         fi
     fi
 
-    # Step 7: Branch protection
+    # Step 6: Branch protection
     if ! $SKIP_PROTECTION; then
         if dry "would set branch protection on ${target_repo}"; then
             :
@@ -221,7 +211,7 @@ PROTECTION
         fi
     fi
 
-    # Step 8: Trigger validation workflow
+    # Step 7: Trigger validation workflow
     if dry "would trigger validation workflow on ${target_repo}"; then
         :
     else
