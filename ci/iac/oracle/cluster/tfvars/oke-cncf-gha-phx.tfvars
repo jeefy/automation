@@ -11,6 +11,12 @@ k8s_api_cidr           = "10.0.0.0/28"
 svc_cidr               = "10.0.16.0/20"
 node_cidr              = "10.0.64.0/18"
 
+# kata-containers runner pool (bare metal - VM shapes lack nested virt)
+kata_node_pool_enabled     = true
+kata_node_pool_size        = 1
+kata_node_shape            = "BM.Standard.E4.128"
+kata_node_boot_volume_size = 1024
+
 control_plane_k8s_version   = "v1.36.0"
 nodepool_k8s_version        = "v1.36.0"
 regional_service_cidr_label = "all-phx-services-in-oracle-services-network"

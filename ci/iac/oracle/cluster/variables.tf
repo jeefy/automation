@@ -95,6 +95,42 @@ variable "oke_node_boot_volume_size" {
   default     = 50
 }
 
+variable "kata_node_pool_enabled" {
+  type        = bool
+  description = "Create a bare-metal node pool for kata-containers runners"
+  default     = false
+}
+
+variable "kata_node_pool_size" {
+  type        = number
+  description = "Number of worker nodes in the kata node pool"
+  default     = 1
+}
+
+variable "kata_node_shape" {
+  type        = string
+  description = "Shape for kata node pool nodes. Must be a bare-metal (BM.*) shape; OCI VM shapes do not support nested virtualization required by kata."
+  default     = "BM.Standard.E4.128"
+}
+
+variable "kata_node_memory" {
+  type        = number
+  description = "Kata worker node memory in GBs (only used with Flex shapes)"
+  default     = 64
+}
+
+variable "kata_node_cpu" {
+  type        = number
+  description = "Kata worker node CPUs (only used with Flex shapes)"
+  default     = 16
+}
+
+variable "kata_node_boot_volume_size" {
+  type        = number
+  description = "The size of the kata node boot volume in GBs. Runner workspaces and docker storage live on emptyDirs backed by this volume."
+  default     = 1024
+}
+
 variable "vcn_cidr" {
   type        = string
   description = "CIDR for the VCN"

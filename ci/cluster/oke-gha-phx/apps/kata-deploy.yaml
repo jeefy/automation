@@ -1,0 +1,32 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kata-deploy
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+    notifications.argoproj.io/subscribe.slack: internal-gha-argo
+  labels:
+    cluster: oke-gha-phx
+spec:
+  project: default
+  destination:
+    server: "https://kubernetes.default.svc"
+    namespace: kube-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
+  sources:
+  - repoURL: ghcr.io/kata-containers/kata-deploy-charts
+    chart: kata-deploy
+    targetRevision: 4.1.0
+    helm:
+      releaseName: kata-deploy
+      valueFiles:
+        - $values/ci/cluster/oke-gha-phx/manifests/kata-deploy-values.yaml
+  - ref: values
+    repoURL: https://github.com/cncf/automation.git
+    targetRevision: main

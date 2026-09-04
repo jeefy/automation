@@ -1,0 +1,21 @@
+# kata-deploy targets ONLY the bare-metal kata node pool (see
+# ci/iac/oracle/cluster/kata-nodepool.tf). VM.Standard.* worker nodes lack
+# nested virtualization and must never receive the kata runtime.
+deploymentMode: daemonset
+
+nodeSelector:
+  cncf.io/kata-runner: "true"
+
+tolerations:
+  - key: cncf.io/kata-runner
+    operator: Exists
+    effect: NoSchedule
+
+shims:
+  disableAll: true
+  qemu-runtime-rs:
+    enabled: true
+
+runtimeClasses:
+  enabled: true
+  createDefault: false
