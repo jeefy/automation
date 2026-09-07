@@ -1,0 +1,112 @@
+name: Kata runner smoke test
+description: >
+  Exercises what CNCF jobs rely on inside a kata runner: guest kernel boundary,
+  tool cache / environment parity with the VM image, docker build with bind
+  mounts from the shared work volume, service containers, kind, and scratch
+  space. Fails closed - every step must pass before an image is promoted.
+inputs:
+  service-url:
+    description: URL of a job-level service container (jobs.<id>.services) to probe; empty skips the check
+    required: false
+    default: ""
+runs:
+  using: composite
+  steps:
+    - name: Workflow service container reachable
+      if: inputs.service-url != ''
+      shell: bash
+      env:
+        SERVICE_URL: ${{ inputs.service-url }}
+      run: |
+        set -euo pipefail
+        for i in $(seq 1 30); do curl -fsS "$SERVICE_URL" >/dev/null && break; sleep 2; done
+        curl -fsS -o /dev/null -w 'job service reachable %{http_code}\n' "$SERVICE_URL"
+        docker ps --format '{{.Names}} {{.Image}}' | grep -q nginx
+    - name: Guest kernel and identity
+      shell: bash
+      run: |
+        set -euo pipefail
+        uname -a
+        cat /proc/version
+        id
+        [ "$(id -u)" = "1001" ]
+        id -nG | tr ' ' '\n' | grep -qx docker
+        sudo -n true
+        grep -qi 'hypervisor' /proc/cpuinfo
+        echo "running under a hypervisor (kata guest)"
+        [ -z "${KUBERNETES_SERVICE_HOST:-}" ] || { echo "cluster service env leaked into runner"; exit 1; }
+        [ ! -e /var/run/secrets/kubernetes.io/serviceaccount/token ] || { echo "SA token mounted"; exit 1; }
+
+    - name: Tool cache and environment parity
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "ImageOS=$ImageOS ImageVersion=$ImageVersion RUNNER_TOOL_CACHE=$RUNNER_TOOL_CACHE"
+        [ -n "$ImageVersion" ]
+        [ "$RUNNER_TOOL_CACHE" = /opt/hostedtoolcache ]
+        ls /opt/hostedtoolcache
+        for d in Python node go; do [ -d "/opt/hostedtoolcache/$d" ] || { echo "toolcache missing $d"; exit 1; }; done
+        touch /opt/hostedtoolcache/.write-test
+        rm /opt/hostedtoolcache/.write-test
+        for t in git curl jq gcc make python3 node go java docker kubectl helm kind; do command -v "$t" >/dev/null || { echo "missing $t"; exit 1; }; done
+        go version; node --version; python3 --version; java -version 2>&1 | head -1
+        test -r /etc/cncf-kata-runner-release
+        jq -r '"source \(.runner_images_release) runner \(.runner_version)"' /etc/cncf-kata-runner-release
+
+    - name: Scratch space and limits
+      shell: bash
+      run: |
+        set -euo pipefail
+        df -h /home/runner/_work /tmp /home/runner/.cache
+        nproc; free -g
+        fallocate -l 1G "$RUNNER_TEMP/scratch.bin"
+        rm "$RUNNER_TEMP/scratch.bin"
+        cat /sys/fs/cgroup/cpu.max /sys/fs/cgroup/memory.max 2>/dev/null || true
+
+    - name: Docker daemon, storage driver, build with bind mount
+      shell: bash
+      run: |
+        set -euo pipefail
+        docker info --format 'server={{.ServerVersion}} driver={{.Driver}} cgroup={{.CgroupDriver}}/{{.CgroupVersion}}'
+        [ "$(docker info --format '{{.Driver}}')" = "fuse-overlayfs" ]
+        docker run --rm hello-world
+        mkdir -p "$GITHUB_WORKSPACE/ctx"
+        printf 'FROM alpine:3\nCOPY payload /payload\nRUN cat /payload\n' > "$GITHUB_WORKSPACE/ctx/Dockerfile"
+        echo "bind-mount-ok $GITHUB_RUN_ID" > "$GITHUB_WORKSPACE/ctx/payload"
+        docker build -t smoke:local "$GITHUB_WORKSPACE/ctx"
+        docker run --rm -v "$GITHUB_WORKSPACE/ctx:/mnt:ro" alpine:3 sh -c 'set -e; grep -q bind-mount-ok /mnt/payload; echo shared-work-volume-visible'
+        docker run --rm -v "$GITHUB_WORKSPACE/ctx:/mnt" alpine:3 sh -c 'echo from-container > /mnt/back'
+        grep -q from-container "$GITHUB_WORKSPACE/ctx/back"
+        docker run --rm --privileged alpine:3 sh -c 'set -e; mount -t tmpfs none /mnt; echo nested-privileged-ok'
+
+    - name: Service container networking
+      shell: bash
+      run: |
+        set -euo pipefail
+        docker network create smoke-net
+        docker run -d --rm --name smoke-nginx --network smoke-net nginx:alpine
+        for i in $(seq 1 30); do docker run --rm --network smoke-net curlimages/curl:8.10.1 -fsS http://smoke-nginx/ >/dev/null && break; sleep 1; done
+        docker run --rm --network smoke-net curlimages/curl:8.10.1 -fsS -o /dev/null -w 'service-reachable %{http_code}\n' http://smoke-nginx/
+        docker run -d --rm --name smoke-pub -p 18080:80 nginx:alpine
+        for i in $(seq 1 30); do curl -fsS http://127.0.0.1:18080/ >/dev/null && break; sleep 1; done
+        curl -fsS http://127.0.0.1:18080/ >/dev/null
+        curl -fsS -o /dev/null -w 'published-port %{http_code}\n' http://127.0.0.1:18080/
+        docker rm -f smoke-nginx smoke-pub; docker network rm smoke-net
+
+    - name: kind cluster
+      shell: bash
+      run: |
+        set -euo pipefail
+        sudo sysctl -q fs.inotify.max_user_instances=1280 fs.inotify.max_user_watches=655360
+        kind create cluster --name smoke --wait 180s
+        kubectl get nodes -o wide
+        kubectl run nginx --image=nginx:alpine --restart=Never
+        kubectl wait --for=condition=Ready pod/nginx --timeout=180s
+        kind delete cluster --name smoke
+
+    - name: Lifecycle
+      shell: bash
+      run: |
+        set -euo pipefail
+        [ -n "${RUNNER_NAME:-}" ]
+        echo "runner ${RUNNER_NAME} completing; the pod must terminate with this job (ephemeral runner + native dind sidecar)"

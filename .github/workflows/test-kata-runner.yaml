@@ -1,46 +1,32 @@
 name: Test Kata Runner
 
+# Manual smoke test of the promoted kata runners (the same checks the nightly
+# canary runs against a candidate digest before promotion).
 on:
   workflow_dispatch:
+    inputs:
+      size:
+        description: Runner size label suffix
+        type: choice
+        default: 2cpu-8gb
+        options: [2cpu-8gb, 8cpu-32gb]
 
 permissions:
   contents: read
 
 jobs:
   test-runner:
-    strategy:
-      matrix:
-        shape: [8cpu-32gb]
-        arch: ["x86-64"]
-    runs-on: oracle-kata-${{ matrix.shape }}-${{ matrix.arch }}
+    runs-on: oracle-kata-${{ inputs.size }}-x86-64
+    timeout-minutes: 40
+    services:
+      nginx:
+        image: nginx:alpine
+        ports:
+          - 18081:80
     steps:
-      - name: Checkout code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-
-      - name: Verify kata guest kernel and environment
-        run: |
-          uname -a
-          lsb_release -a || cat /etc/os-release
-          id
-          echo "Guest kernel should differ from the OKE host kernel:"
-          cat /proc/version
-
-      - name: Verify docker works with fuse-overlayfs
-        run: |
-          docker info
-          docker info --format '{{.Driver}}'
-          docker run hello-world
-
-      - name: Run a basic workload
-        run: |
-          echo "Testing Runner"
-          echo "CPU Info:"
-          lscpu
-          docker run --rm alpine:3 sh -c 'echo nested container OK'
-
-      - name: Check local disk
-        run: |
-          df -h /
-          df -h /home/runner/_work
+      - uses: ./.github/actions/kata-runner-smoke
+        with:
+          service-url: http://127.0.0.1:18081/
