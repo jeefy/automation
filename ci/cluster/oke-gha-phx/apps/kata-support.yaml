@@ -1,25 +1,24 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: github-kata-runners
+  name: kata-support
   namespace: argocd
   annotations:
     argocd.argoproj.io/manifest-generate-paths: .
-    argocd.argoproj.io/sync-wave: "3"
+    argocd.argoproj.io/sync-wave: "2"
     notifications.argoproj.io/subscribe.slack: internal-gha-argo
   labels:
     cluster: oke-gha-phx
 spec:
   syncPolicy:
-    automated: {}
+    automated:
+      prune: true
+      selfHeal: true
   project: default
   destination:
     server: https://kubernetes.default.svc
     namespace: arc-systems
   sources:
     - repoURL: https://github.com/cncf/automation.git
-      path: ci/cluster/oke-gha-phx/manifests/kata-runners
+      path: ci/cluster/oke-gha-phx/manifests/kata-support
       targetRevision: HEAD
-      directory:
-        recurse: false
-        exclude: 'canary/**'
