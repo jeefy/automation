@@ -1,0 +1,26 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kata-canary
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/manifest-generate-paths: .
+    argocd.argoproj.io/sync-wave: "2"
+    notifications.argoproj.io/subscribe.slack: internal-gha-argo
+  labels:
+    cluster: oke-gha-phx
+spec:
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false
+  project: default
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kata-canary
+  sources:
+    - repoURL: https://github.com/cncf/automation.git
+      path: ci/cluster/oke-gha-phx/manifests/kata-canary
+      targetRevision: HEAD

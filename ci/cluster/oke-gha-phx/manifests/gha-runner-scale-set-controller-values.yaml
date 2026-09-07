@@ -9,7 +9,11 @@ podAnnotations:
   prometheus.io/port: "8080"
 
 flags:
-  watchSingleNamespace: "arc-systems"
+  # Empty: watch every namespace (chart then installs cluster-scoped RBAC).
+  # Needed so the controller reconciles the kata canary scale sets in the
+  # dedicated kata-canary namespace (manifests/kata-canary/). Production scale
+  # sets stay in arc-systems.
+  watchSingleNamespace: ""
   runnerMaxConcurrentReconciles: 10
 
 resources:

@@ -1,0 +1,47 @@
+# Static, pre-installed RBAC for every canary scale set (the per-run
+# AutoscalingRunnerSet references these by fixed name, so the canary job never
+# creates Roles or RoleBindings). Mirrors what gha-runner-scale-set 0.14.1
+# renders per scale set: a token-less runner ServiceAccount and a manager Role
+# for the ARC controller ServiceAccount from arc-systems.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kata-canary-runner
+  namespace: kata-canary
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: kata-canary-gha-rs-manager
+  namespace: kata-canary
+rules:
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["create", "delete", "get"]
+- apiGroups: [""]
+  resources: ["pods/status"]
+  verbs: ["get"]
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["create", "delete", "get", "list", "patch", "update"]
+- apiGroups: [""]
+  resources: ["serviceaccounts"]
+  verbs: ["create", "delete", "get", "list", "patch", "update"]
+- apiGroups: ["rbac.authorization.k8s.io"]
+  resources: ["rolebindings", "roles"]
+  verbs: ["create", "delete", "get", "patch", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: kata-canary-gha-rs-manager
+  namespace: kata-canary
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: kata-canary-gha-rs-manager
+subjects:
+- kind: ServiceAccount
+  name: cncf-gha-rs-controller
+  namespace: arc-systems

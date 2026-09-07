@@ -1,0 +1,12 @@
+# Dedicated namespace for kata canary scale sets. Everything the nightly
+# canary creates lives here, so the canary identity cannot see or touch
+# production scale sets in arc-systems. Requires the ARC controller to watch
+# all namespaces (gha-runner-scale-set-controller-values.yaml).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kata-canary
+  labels:
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/audit: privileged
+    pod-security.kubernetes.io/warn: privileged

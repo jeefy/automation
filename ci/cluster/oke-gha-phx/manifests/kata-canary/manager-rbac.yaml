@@ -1,0 +1,43 @@
+# Identity used by .github/workflows/promote-kata-image.yml (secret
+# KATA_CANARY_KUBECONFIG). Scoped to this namespace: it can create/delete
+# canary AutoscalingRunnerSets and pre-pull DaemonSets and read pods, logs
+# and events. It cannot read Secrets, create RBAC, or reach arc-systems.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kata-canary-manager
+  namespace: kata-canary
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: kata-canary-manager
+  namespace: kata-canary
+rules:
+- apiGroups: ["actions.github.com"]
+  resources: ["autoscalingrunnersets"]
+  verbs: ["get", "list", "watch", "create", "delete", "patch"]
+- apiGroups: ["actions.github.com"]
+  resources: ["ephemeralrunnersets", "ephemeralrunners", "autoscalinglisteners"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["apps"]
+  resources: ["daemonsets"]
+  verbs: ["get", "list", "watch", "create", "delete", "patch"]
+- apiGroups: [""]
+  resources: ["pods", "pods/log", "events"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: kata-canary-manager
+  namespace: kata-canary
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: kata-canary-manager
+subjects:
+- kind: ServiceAccount
+  name: kata-canary-manager
+  namespace: kata-canary
