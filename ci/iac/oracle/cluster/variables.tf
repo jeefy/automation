@@ -97,38 +97,63 @@ variable "oke_node_boot_volume_size" {
 
 variable "kata_node_pool_enabled" {
   type        = bool
-  description = "Create a bare-metal node pool for kata-containers runners"
+  description = "Create a bare-metal node pool for kata-containers runners (pilot: oke-cncf-gha-phx only)."
   default     = false
 }
 
 variable "kata_node_pool_size" {
   type        = number
-  description = "Number of worker nodes in the kata node pool"
+  description = "Initial number of nodes in the kata pool. After creation the ClusterAutoscaler owns the size (Terraform ignores drift); must be within [kata_autoscaler_min, kata_autoscaler_max]."
   default     = 1
+
+  validation {
+    condition     = var.kata_node_pool_size >= 0 && var.kata_node_pool_size <= 10 && floor(var.kata_node_pool_size) == var.kata_node_pool_size
+    error_message = "kata_node_pool_size must be an integer between 0 and 10."
+  }
+}
+
+variable "kata_autoscaler_min" {
+  type        = number
+  description = "ClusterAutoscaler minimum for the kata pool. 1 keeps one bare-metal host warm for the small runner reserve; 0 is only safe after a real cold-bootstrap test (kata-deploy must install before the first runner pod can start)."
+  default     = 1
+
+  validation {
+    condition     = var.kata_autoscaler_min >= 0 && floor(var.kata_autoscaler_min) == var.kata_autoscaler_min
+    error_message = "kata_autoscaler_min must be a non-negative integer."
+  }
+}
+
+variable "kata_autoscaler_max" {
+  type        = number
+  description = "ClusterAutoscaler maximum for the kata pool. Each node is a whole bare-metal host; keep the pilot ceiling low."
+  default     = 2
+
+  validation {
+    condition     = var.kata_autoscaler_max >= 1 && var.kata_autoscaler_max <= 10 && floor(var.kata_autoscaler_max) == var.kata_autoscaler_max
+    error_message = "kata_autoscaler_max must be an integer between 1 and 10."
+  }
 }
 
 variable "kata_node_shape" {
   type        = string
-  description = "Shape for kata node pool nodes. Must be a bare-metal (BM.*) shape; OCI VM shapes do not support nested virtualization required by kata."
+  description = "Shape for kata pool nodes. Must be a fixed-size bare-metal x86 shape (BM.Standard.*, BM.DenseIO.*, BM.Optimized.*); VM shapes lack nested virtualisation."
   default     = "BM.Standard.E4.128"
-}
 
-variable "kata_node_memory" {
-  type        = number
-  description = "Kata worker node memory in GBs (only used with Flex shapes)"
-  default     = 64
-}
-
-variable "kata_node_cpu" {
-  type        = number
-  description = "Kata worker node CPUs (only used with Flex shapes)"
-  default     = 16
+  validation {
+    condition     = can(regex("^BM\\.(Standard|DenseIO|Optimized)[0-9]*\\.(E[0-9]+\\.)?[0-9]+$", var.kata_node_shape)) && !can(regex("\\.A[0-9]+\\.", var.kata_node_shape)) && !can(regex("Flex$", var.kata_node_shape))
+    error_message = "kata_node_shape must be a fixed-size x86 bare-metal shape such as BM.Standard.E4.128 or BM.Standard3.64 (no VM.*, Flex or Ampere A1/A2 shapes)."
+  }
 }
 
 variable "kata_node_boot_volume_size" {
   type        = number
-  description = "The size of the kata node boot volume in GBs. Runner workspaces and docker storage live on emptyDirs backed by this volume."
+  description = "Boot volume size in GBs for kata nodes. Hosts the containerd image cache (multi-GB runner image) and every runner pod's emptyDir scratch, so size it for max pods x scratch limit plus headroom."
   default     = 1024
+
+  validation {
+    condition     = var.kata_node_boot_volume_size >= 200 && var.kata_node_boot_volume_size <= 32768
+    error_message = "kata_node_boot_volume_size must be between 200 and 32768 GB."
+  }
 }
 
 variable "vcn_cidr" {

@@ -1,15 +1,26 @@
 # Optional bare-metal node pool for kata-containers based runners.
 #
-# Kata Containers requires either bare-metal hosts or nested virtualization.
-# OCI VM shapes do not expose nested virtualization, so this pool must use a
-# BM.* shape. Nodes register with the `cncf.io/kata-runner=true:NoSchedule`
-# taint (via kubelet extra args in cloud-init) and matching node label, so
-# only kata-deploy and kata runner workloads land on them.
+# Kata Containers boots a QEMU guest per pod and therefore needs hardware
+# virtualisation. OCI VM shapes do not expose nested virtualisation, so this
+# pool must use a BM.* shape (validated in variables.tf). Nodes register with
+# the `cncf.io/kata-runner=true:NoSchedule` taint so only kata-deploy and kata
+# runner workloads land on them, and kata-deploy adds
+# `katacontainers.io/kata-runtime=true` once the runtime is installed.
 locals {
+  kata_node_taint = "cncf.io/kata-runner=true:NoSchedule"
+
+  # Fail closed: if the OKE bootstrap script cannot be fetched or fails, the
+  # node never joins rather than joining without the taint (which would let
+  # ordinary workloads schedule onto a runner host).
   kata_node_cloud_init = <<-EOT
     #!/bin/bash
-    curl --fail -H "Authorization: Bearer Oracle" -L0 http://169.254.169.254/opc/v2/instance/metadata/oke_init_script | base64 --decode >/var/run/oke-init.sh
-    bash /var/run/oke-init.sh --kubelet-extra-args "--register-with-taints=cncf.io/kata-runner=true:NoSchedule"
+    set -euo pipefail
+    curl --fail --silent --show-error --retry 5 --retry-delay 5 \
+      -H "Authorization: Bearer Oracle" -L0 \
+      http://169.254.169.254/opc/v2/instance/metadata/oke_init_script \
+      | base64 --decode > /var/run/oke-init.sh
+    test -s /var/run/oke-init.sh
+    exec bash /var/run/oke-init.sh --kubelet-extra-args "--register-with-taints=${local.kata_node_taint}"
   EOT
 }
 
@@ -22,16 +33,8 @@ resource "oci_containerengine_node_pool" "kata_worker" {
   kubernetes_version = var.nodepool_k8s_version
   name               = "${var.cluster_name}-kata-pool1"
 
+  # BM shapes are fixed-size: no node_shape_config block.
   node_shape = var.kata_node_shape
-
-  # BM shapes are fixed-size; only Flex shapes take a shape config.
-  dynamic "node_shape_config" {
-    for_each = strcontains(var.kata_node_shape, "Flex") ? [1] : []
-    content {
-      memory_in_gbs = var.kata_node_memory
-      ocpus         = var.kata_node_cpu
-    }
-  }
 
   node_source_details {
     boot_volume_size_in_gbs = var.kata_node_boot_volume_size
@@ -71,5 +74,16 @@ resource "oci_containerengine_node_pool" "kata_worker" {
     is_node_cycling_enabled = false
     maximum_unavailable     = 1
     maximum_surge           = 1
+  }
+
+  lifecycle {
+    # The ClusterAutoscaler owns the pool size between min and max; a plan
+    # after autoscaling must not resize the pool back to kata_node_pool_size.
+    ignore_changes = [node_config_details[0].size]
+
+    precondition {
+      condition     = var.kata_node_pool_size >= var.kata_autoscaler_min && var.kata_node_pool_size <= var.kata_autoscaler_max
+      error_message = "kata_node_pool_size must lie within [kata_autoscaler_min, kata_autoscaler_max]."
+    }
   }
 }

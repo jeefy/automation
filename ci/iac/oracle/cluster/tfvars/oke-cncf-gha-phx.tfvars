@@ -11,9 +11,14 @@ k8s_api_cidr           = "10.0.0.0/28"
 svc_cidr               = "10.0.16.0/20"
 node_cidr              = "10.0.64.0/18"
 
-# kata-containers runner pool (bare metal - VM shapes lack nested virt)
+# kata-containers runner pool (bare metal - VM shapes lack nested virt).
+# min 1 = one whole BM.Standard.E4.128 (128 OCPU / 2 TB) is always billed; it
+# hosts the warm oracle-kata-2cpu-8gb reserve. Drop to 0 only after the cold
+# bootstrap test in manifests/kata-runners/README.md has passed.
 kata_node_pool_enabled     = true
 kata_node_pool_size        = 1
+kata_autoscaler_min        = 1
+kata_autoscaler_max        = 2
 kata_node_shape            = "BM.Standard.E4.128"
 kata_node_boot_volume_size = 1024
 
