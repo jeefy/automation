@@ -11,11 +11,25 @@ tolerations:
     operator: Exists
     effect: NoSchedule
 
+# A chart/image bump must not restart containerd under running CI jobs on
+# every node at once. OnDelete makes runtime upgrades an operator action:
+# cordon + drain a kata node, delete its kata-deploy pod, uncordon, repeat
+# (manifests/kata-runners/README.md, "Upgrading the kata runtime").
+updateStrategy:
+  type: OnDelete
+
+# No nydus/erofs snapshotter: the runner image is pre-pulled by
+# kata-support/kata-image-prepull.yaml; lazy pulling is an untested option.
+snapshotter:
+  setup: []
+
 shims:
   disableAll: true
   qemu-runtime-rs:
     enabled: true
 
+# The chart's RuntimeClass already carries overhead.podFixed 250m/320Mi and
+# scheduling.nodeSelector katacontainers.io/kata-runtime=true (kata-deploy 4.1.0).
 runtimeClasses:
   enabled: true
   createDefault: false
