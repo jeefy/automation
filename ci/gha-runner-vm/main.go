@@ -18,7 +18,6 @@ import (
 	"time"
 
 	"github.com/google/go-github/v71/github"
-	"github.com/oracle/oci-go-sdk/v65/core"
 	"github.com/spf13/cobra"
 )
 
@@ -63,7 +62,7 @@ func run(cmd *cobra.Command, argv []string) error {
 	imageName := fmt.Sprintf("%s-%s-%s-gha-image", args.os, args.osVersion, args.arch)
 
 	githubClient := github.NewClient(nil)
-	releases, _, err := githubClient.Repositories.ListReleases(context.Background(), "actions", "runner-images", nil)
+	releases, _, err := githubClient.Repositories.ListReleases(context.Background(), "actions", "runner-images", &github.ListOptions{PerPage: 100})
 	if err != nil {
 		log.Fatalf("Failed to list releases: %s\n", err)
 	}
@@ -85,11 +84,13 @@ func run(cmd *cobra.Command, argv []string) error {
 		log.Printf("Found %s %s release: %s\n", args.os, args.osVersion, release.GetTagName())
 		downloadURL := release.GetTarballURL()
 
-		if exists, _ := imageExists(imageName, release.GetTagName()); exists {
-			if os.Getenv("GITHUB_PERIODIC") == "true" {
-				log.Println("Image already exists.")
-				return nil
-			}
+		exists, err := imageExists(imageName, release.GetTagName())
+		if err != nil {
+			log.Fatalf("Failed to check for existing image: %s\n", err)
+		}
+		if exists && os.Getenv("GITHUB_PERIODIC") == "true" {
+			log.Println("Image already exists.")
+			return nil
 		}
 
 		log.Printf("Download URL: %s\n", downloadURL)
@@ -360,27 +361,34 @@ func imageExists(imageName, imageVersion string) (bool, error) {
 		return false, err
 	}
 
+	return parseImageExists(output, imageName, imageVersion)
+}
+
+// parseImageExists interprets `oci compute image list` output. The CLI prints
+// nothing at all when no image matches, so empty output means "absent", not
+// "error"; a non-empty response only counts when an entry matches exactly.
+func parseImageExists(output []byte, imageName, imageVersion string) (bool, error) {
+	if len(bytes.TrimSpace(output)) == 0 {
+		return false, nil
+	}
+
+	// The CLI prints kebab-case keys, unlike the SDK's core.Image (camelCase).
 	var response struct {
-		Data []core.Image `json:"data"`
+		Data []struct {
+			OperatingSystem        string `json:"operating-system"`
+			OperatingSystemVersion string `json:"operating-system-version"`
+		} `json:"data"`
 	}
-
-	if len(output) == 0 {
-		return false, fmt.Errorf("could not find image")
-	}
-
 	if err := json.Unmarshal(output, &response); err != nil {
-		log.Printf("Error unmarshalling OCI response: %v. Response was: %s", err, string(output))
 		return false, fmt.Errorf("could not unmarshal OCI response: %w", err)
 	}
 
 	for _, image := range response.Data {
-		if image.OperatingSystem != nil && *image.OperatingSystem == imageName && image.OperatingSystemVersion != nil && *image.OperatingSystemVersion == imageVersion {
-			log.Printf("Found image: %s", *image.OperatingSystemVersion)
+		if image.OperatingSystem == imageName && image.OperatingSystemVersion == imageVersion {
 			return true, nil
 		}
 	}
-
-	return true, nil
+	return false, nil
 }
 
 func updatePackerConfig(baseDir string, filename string, searchString string, replaceString string) (string, error) {
@@ -683,7 +691,7 @@ build {
 				"sleep 30",
 				"export HISTSIZE=0 && sync",
 				"usermod -aG docker ubuntu",
-				"apt install -y libelf-dev linux-oracle",
+				"apt install -y libelf-dev linux-oracle fuse-overlayfs",
 				"apt-get clean",
 				"rm -rf /var/lib/apt/lists/*"
 			]`
