@@ -3,6 +3,12 @@ name: Periodic Build New Actions VM
 on:
   schedule:
     - cron: "0 0 * * *"
+  workflow_dispatch:
+    inputs:
+      force_rebuild_x86:
+        description: Rebuild the x86 VM image (and kata candidate) even if the OCI image for the latest release exists
+        type: boolean
+        default: false
 
 permissions:
   actions: read
@@ -24,6 +30,7 @@ jobs:
     name: Build new Actions VM
     runs-on: cncf-ubuntu-16-64-x86
     permissions:
+      actions: write
       contents: read
       packages: write
     env:
@@ -31,7 +38,6 @@ jobs:
       CRANE_VERSION: v0.22.1
     outputs:
       image_exists: ${{ steps.check_latest.outputs.image_exists }}
-      kata_image_tag: ${{ steps.kata_image.outputs.kata_image_tag }}
     timeout-minutes: 180
 
     steps:
@@ -59,13 +65,20 @@ jobs:
         id: check_latest
         run: |
           set -euo pipefail
-          LATEST_RELEASE=$(curl -fsSL "https://api.github.com/repos/actions/runner-images/releases?per_page=100" | jq -r '.[] | select(.prerelease == false) | select(.name | startswith("Ubuntu 24.04")) | .tag_name' | head -1)
+          LATEST_RELEASE=$(curl -fsSL "https://api.github.com/repos/actions/runner-images/releases?per_page=100" | jq -er '[.[] | select(.prerelease == false) | select(.tag_name | startswith("ubuntu24/"))][0].tag_name // error("no stable amd64 release")')
+          [ -n "$LATEST_RELEASE" ] || { echo "could not resolve latest Ubuntu 24.04 runner-images release"; exit 1; }
+          echo "release_tag=${LATEST_RELEASE}" >> "$GITHUB_OUTPUT"
           IMAGE_EXISTS=$(oci compute image list --compartment-id ${{ env.COMPARTMENT_ID }} --operating-system "ubuntu-24.04-amd64-gha-image" --operating-system-version ${LATEST_RELEASE})
-          if [ -z "$IMAGE_EXISTS" ]; then
+          if [ "${FORCE_REBUILD}" = "true" ]; then
+            echo "force_rebuild_x86 set: rebuilding even though an image may exist"
+            echo "image_exists=false" >> "$GITHUB_OUTPUT"
+          elif [ -z "$IMAGE_EXISTS" ]; then
             echo "image_exists=false" >> "$GITHUB_OUTPUT"
           else
             echo "image_exists=true" >> "$GITHUB_OUTPUT"
           fi
+        env:
+          FORCE_REBUILD: ${{ inputs.force_rebuild_x86 == true }}
 
       - name: Change Ubuntu mirrors
         if: steps.check_latest.outputs.image_exists == 'false'
@@ -76,7 +89,7 @@ jobs:
       - name: Set up QEMU
         if: steps.check_latest.outputs.image_exists == 'false'
         run : |
-          sudo apt install qemu-system-x86 xorriso
+          sudo apt install qemu-system-x86 xorriso pigz
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
@@ -122,9 +135,12 @@ jobs:
           export PATH="$PATH:$HOME/.local/bin" && \
           export PACKER_PLUGIN_PATH=~/.config/packer/plugins && \
           cd ci/gha-runner-vm && \
-          PACKER_LOG=1 GITHUB_PERIODIC=true go run main.go \
+          PACKER_LOG=1 GITHUB_PERIODIC="${GITHUB_PERIODIC}" go run main.go \
             --isoURL https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img \
             --arch amd64
+        env:
+          # false on a forced rebuild so the builder does not return early when the OCI image exists
+          GITHUB_PERIODIC: ${{ inputs.force_rebuild_x86 == true && 'false' || 'true' }}
 
       - name: Upload image OCID
         if: steps.check_latest.outputs.image_exists == 'false'
@@ -135,6 +151,7 @@ jobs:
 
       - name: Login to GitHub Container Registry
         if: steps.check_latest.outputs.image_exists == 'false'
+        continue-on-error: true
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
@@ -143,24 +160,48 @@ jobs:
 
       - name: Install crane
         if: steps.check_latest.outputs.image_exists == 'false'
+        continue-on-error: true
         run: |
           curl -fsSL "https://github.com/google/go-containerregistry/releases/download/${{ env.CRANE_VERSION }}/go-containerregistry_Linux_x86_64.tar.gz" \
             | sudo tar -xz -C /usr/local/bin crane
+          crane version
 
       # The same rootfs the OCI custom image ships is converted into a
       # container image for the kata-containers runners, so oracle-kata-*
-      # jobs get an identical toolset to the oracle-* VM jobs.
+      # jobs get the same software as the oracle-* VM jobs. The rc- tag is a
+      # convenience; everything downstream consumes the digest output.
       - name: Build and push kata runner image (release candidate)
         if: steps.check_latest.outputs.image_exists == 'false'
         id: kata_image
+        continue-on-error: true
+        env:
+          SOURCE_REVISION: ${{ github.sha }}
         run: |
           set -euo pipefail
-          IMAGE_TAG=$(tr '/' '-' < /tmp/image_tag | tr -d '[:space:]')
+          RELEASE_TAG="$(tr -d '[:space:]' < /tmp/image_tag)"
+          IMAGE_TAG="${RELEASE_TAG//\//-}"
           ./.github/scripts/build-kata-runner-image.sh \
             ci/gha-runner-vm/build/image.raw \
             "ghcr.io/${{ github.repository_owner }}/gha-kata-runner:rc-${IMAGE_TAG}-amd64" \
-            amd64
-          echo "kata_image_tag=${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
+            amd64 \
+            "${RELEASE_TAG}"
+
+      # The kata canary and promotion run in promote-kata-image.yml so a kata
+      # failure never blocks the VM image release. continue-on-error: the VM
+      # pipeline must not fail because the kata image could not be built.
+      - name: Dispatch kata canary for the candidate digest
+        if: steps.check_latest.outputs.image_exists == 'false' && steps.kata_image.outputs.digest != ''
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE_DIGEST: ${{ steps.kata_image.outputs.digest }}
+          RELEASE_TAG: ${{ steps.check_latest.outputs.release_tag }}
+        run: |
+          set -euo pipefail
+          gh workflow run promote-kata-image.yml --ref "${GITHUB_REF_NAME}" \
+            -f "candidate_digest=${CANDIDATE_DIGEST}" \
+            -f "release_tag=${RELEASE_TAG}" \
+            -f "source_revision=${GITHUB_SHA}"
 
       - name: Upload object name
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -597,36 +638,6 @@ jobs:
               sleep 30
             fi
           done
-
-  release-kata-image:
-    runs-on: ubuntu-latest
-    needs: [build-x86, run-kind-with-arc, test-runner]
-    if: needs.build-x86.outputs.image_exists == 'false'
-    permissions:
-      contents: read
-      packages: write
-    env:
-      CRANE_VERSION: v0.22.1
-      IMAGE: ghcr.io/${{ github.repository_owner }}/gha-kata-runner
-    steps:
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Install crane
-        run: |
-          curl -fsSL "https://github.com/google/go-containerregistry/releases/download/${{ env.CRANE_VERSION }}/go-containerregistry_Linux_x86_64.tar.gz" \
-            | sudo tar -xz -C /usr/local/bin crane
-
-      - name: Promote release candidate
-        run: |
-          set -euo pipefail
-          IMAGE_TAG="${{ needs.build-x86.outputs.kata_image_tag }}"
-          crane tag "${IMAGE}:rc-${IMAGE_TAG}-amd64" "${IMAGE_TAG}-amd64"
-          crane tag "${IMAGE}:rc-${IMAGE_TAG}-amd64" "latest-amd64"
 
   copy-x86-image-to-regions:
     runs-on: ubuntu-latest

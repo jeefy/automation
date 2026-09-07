@@ -1,0 +1,256 @@
+name: Promote Kata Runner Image
+
+# Canary-tests one candidate ghcr.io/cncf/gha-kata-runner digest under kata on
+# oke-gha-phx and, only if every step passes, opens the GitOps PR that pins
+# production to it. Dispatched by periodic-build-new-actions-vm.yml after a
+# successful conversion; re-run by hand with the same inputs to retry a
+# candidate without rebuilding the VM image.
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_digest:
+        description: sha256:<64 hex> of the candidate gha-kata-runner image
+        required: true
+        type: string
+      release_tag:
+        description: actions/runner-images release tag the candidate was built from (e.g. ubuntu24/20260901.1)
+        required: true
+        type: string
+      source_revision:
+        description: cncf/automation commit SHA the candidate was built from (recorded in the image)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: promote-kata-image
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/cncf/gha-kata-runner
+  CRANE_VERSION: v0.22.1
+
+jobs:
+  preflight:
+    name: Validate inputs and public pullability
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      candidate: ${{ steps.check.outputs.candidate }}
+      digest: ${{ steps.check.outputs.digest }}
+    env:
+      IN_DIGEST: ${{ inputs.candidate_digest }}
+      IN_RELEASE: ${{ inputs.release_tag }}
+      IN_REVISION: ${{ inputs.source_revision }}
+    steps:
+      - name: Validate inputs
+        id: check
+        run: |
+          set -euo pipefail
+          [[ "${IN_DIGEST}" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "candidate_digest must be sha256:<64 hex>"; exit 1; }
+          [[ "${IN_DIGEST#sha256:}" != "$(printf '0%.0s' $(seq 64))" ]] || { echo "all-zero digest is not an image"; exit 1; }
+          [[ "${IN_RELEASE}" =~ ^ubuntu[0-9]+/[0-9]+\.[0-9]+$ ]] || { echo "release_tag must look like ubuntu24/20260901.1"; exit 1; }
+          [[ "${IN_REVISION}" =~ ^[0-9a-f]{40}$ ]] || { echo "source_revision must be a 40-hex commit SHA"; exit 1; }
+          echo "digest=${IN_DIGEST}" >> "$GITHUB_OUTPUT"
+          echo "candidate=${IMAGE}@${IN_DIGEST}" >> "$GITHUB_OUTPUT"
+
+      # Kata nodes pull anonymously; the package must be public. An
+      # unauthenticated manifest fetch distinguishes "pullable" from
+      # "private or absent" (GHCR answers both of the latter with 401/403 or
+      # 404; the fix for a private package is a one-time visibility change by
+      # a repo admin, see kata-runners/README.md).
+      - name: Anonymous pull check
+        run: |
+          set -euo pipefail
+          REPO_PATH="${IMAGE#ghcr.io/}"
+          TOKEN=$(curl -fsS "https://ghcr.io/token?scope=repository:${REPO_PATH}:pull" | jq -r .token)
+          CODE=$(curl -sS -o /tmp/manifest.json -w '%{http_code}' \
+            -H "Authorization: Bearer ${TOKEN}" \
+            -H 'Accept: application/vnd.oci.image.manifest.v1+json, application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.v2+json' \
+            "https://ghcr.io/v2/${REPO_PATH}/manifests/${IN_DIGEST}")
+          case "${CODE}" in
+            200) echo "candidate is anonymously pullable"; jq -r '.layers | length' /tmp/manifest.json | xargs -I{} echo "{} layers" ;;
+            401|403) echo "ERROR: ${IMAGE} is not publicly readable OR the digest does not exist (GHCR hides both behind ${CODE}). Set the package visibility to public and confirm the digest, then re-dispatch."; exit 1 ;;
+            404) echo "ERROR: digest ${IN_DIGEST} not found in ${IMAGE}"; exit 1 ;;
+            *) echo "ERROR: unexpected HTTP ${CODE} from ghcr.io"; exit 1 ;;
+          esac
+
+  # Creates a temporary scale set in the kata-canary namespace for the exact
+  # candidate digest, pre-pulls it on every kata node, then babysits the test
+  # job below. On any failure it deletes the set AND cancels this run so the
+  # queued test job cannot wait forever on a label nobody serves.
+  canary-manage:
+    name: Kata canary (manage)
+    runs-on: ubuntu-latest
+    needs: [preflight]
+    permissions:
+      actions: write
+      contents: read
+    timeout-minutes: 120
+    env:
+      CANARY_LABEL: kata-canary-${{ github.run_id }}-${{ github.run_attempt }}
+      CANDIDATE: ${{ needs.preflight.outputs.candidate }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Write scoped kubeconfig
+        env:
+          KUBECONFIG_B64: ${{ secrets.KATA_CANARY_KUBECONFIG }}
+        run: |
+          set -euo pipefail
+          [ -n "${KUBECONFIG_B64}" ] || { echo "KATA_CANARY_KUBECONFIG secret is not set (kata-runners/README.md)"; exit 1; }
+          install -m 0600 /dev/null "$RUNNER_TEMP/kubeconfig"
+          printf '%s' "${KUBECONFIG_B64}" | base64 -d > "$RUNNER_TEMP/kubeconfig"
+          echo "KUBECONFIG=$RUNNER_TEMP/kubeconfig" >> "$GITHUB_ENV"
+          kubectl --kubeconfig "$RUNNER_TEMP/kubeconfig" auth whoami
+
+      - name: Create canary scale set and pre-pull
+        id: create
+        run: |
+          set -euo pipefail
+          pip install --quiet pyyaml
+          ./.github/scripts/kata-canary.sh create "${CANDIDATE}" "${CANARY_LABEL}"
+          ./.github/scripts/kata-canary.sh wait "${CANARY_LABEL}"
+
+      - name: Wait for the canary test job
+        id: watch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TARGET_JOB="Kata canary (test)"
+          PICKUP_TIMEOUT=1500
+          START_TIME=$(date +%s)
+          while true; do
+            if ! RESULT=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/attempts/${GITHUB_RUN_ATTEMPT}/jobs?per_page=100"); then
+              echo "gh api failed, retrying"; sleep 30; continue
+            fi
+            JOB_STATUS=$(echo "$RESULT" | jq -r --arg job "$TARGET_JOB" '.jobs[] | select(.name == $job) | .status')
+            JOB_CONCLUSION=$(echo "$RESULT" | jq -r --arg job "$TARGET_JOB" '.jobs[] | select(.name == $job) | .conclusion')
+            if [ "$JOB_STATUS" != "in_progress" ] && [ "$JOB_STATUS" != "completed" ]; then
+              if [ $(( $(date +%s) - START_TIME )) -ge "$PICKUP_TIMEOUT" ]; then
+                echo "ERROR: ${TARGET_JOB} was not picked up within $(( PICKUP_TIMEOUT / 60 )) minutes"
+                exit 1
+              fi
+            fi
+            case "$JOB_STATUS" in
+              completed)
+                [ "$JOB_CONCLUSION" = "success" ] && { echo "${TARGET_JOB} succeeded"; break; }
+                echo "ERROR: ${TARGET_JOB} concluded ${JOB_CONCLUSION}"; exit 1 ;;
+              *) echo "${TARGET_JOB}: ${JOB_STATUS:-not created yet}"; sleep 30 ;;
+            esac
+          done
+
+      - name: Diagnose, clean up and cancel this run on failure
+        if: failure() || cancelled()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set +e
+          if [ -n "${KUBECONFIG:-}" ]; then
+            ./.github/scripts/kata-canary.sh diagnose "${CANARY_LABEL}"
+            ./.github/scripts/kata-canary.sh delete "${CANARY_LABEL}"
+          fi
+          gh api -X POST "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/cancel"
+          exit 1
+
+      - name: Delete canary scale set
+        if: always()
+        run: |
+          [ -n "${KUBECONFIG:-}" ] || exit 0
+          ./.github/scripts/kata-canary.sh delete "${CANARY_LABEL}"
+
+  canary-test:
+    name: Kata canary (test)
+    runs-on: kata-canary-${{ github.run_id }}-${{ github.run_attempt }}
+    needs: [preflight]
+    permissions:
+      contents: read
+    timeout-minutes: 45
+    # A real workflow service container (job.services) exercises the
+    # runner's docker network the same way project workflows do.
+    services:
+      nginx:
+        image: nginx:alpine
+        ports:
+          - 18081:80
+    env:
+      SERVICE_URL: http://127.0.0.1:18081/
+      EXPECTED_DIGEST: ${{ needs.preflight.outputs.digest }}
+      EXPECTED_RELEASE: ${{ inputs.release_tag }}
+      EXPECTED_REVISION: ${{ inputs.source_revision }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Verify this runner executes the candidate
+        run: |
+          set -euo pipefail
+          test -r /etc/cncf-kata-runner-release
+          jq . /etc/cncf-kata-runner-release
+          [ "$(jq -r .runner_images_release /etc/cncf-kata-runner-release)" = "${EXPECTED_RELEASE}" ]
+          [ "$(jq -r .source_revision /etc/cncf-kata-runner-release)" = "${EXPECTED_REVISION}" ]
+          echo "candidate digest under test: ${EXPECTED_DIGEST}"
+      - uses: ./.github/actions/kata-runner-smoke
+        with:
+          service-url: ${{ env.SERVICE_URL }}
+
+  promote:
+    name: Open GitOps promotion PR
+    runs-on: ubuntu-latest
+    needs: [preflight, canary-manage, canary-test]
+    if: needs.canary-manage.result == 'success' && needs.canary-test.result == 'success'
+    permissions:
+      contents: read
+      packages: write
+    timeout-minutes: 15
+    env:
+      DIGEST: ${{ needs.preflight.outputs.digest }}
+      RELEASE_TAG: ${{ inputs.release_tag }}
+      SOURCE_REVISION: ${{ inputs.source_revision }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install crane
+        run: |
+          curl -fsSL "https://github.com/google/go-containerregistry/releases/download/${CRANE_VERSION}/go-containerregistry_Linux_x86_64.tar.gz" \
+            | sudo tar -xz -C /usr/local/bin crane
+
+      - name: Tag the tested digest (informational, never consumed)
+        run: |
+          set -euo pipefail
+          crane digest "${IMAGE}@${DIGEST}" >/dev/null
+          crane tag "${IMAGE}@${DIGEST}" "${RELEASE_TAG//\//-}-amd64"
+
+      - name: Open PR pinning IMAGE_DIGEST
+        env:
+          GH_TOKEN: ${{ secrets.GHA_PAT }}
+        run: |
+          set -euo pipefail
+          pip install --quiet pyyaml
+          BRANCH="kata-image/${RELEASE_TAG//\//-}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          git config user.name "cncf-automation[bot]"
+          git config user.email "cncf-automation[bot]@users.noreply.github.com"
+          git checkout -b "${BRANCH}"
+          echo "${DIGEST}" > ci/cluster/oke-gha-phx/manifests/kata-runners/IMAGE_DIGEST
+          python3 ci/cluster/oke-gha-phx/manifests/kata-runners/render.py
+          python3 ci/cluster/oke-gha-phx/manifests/kata-runners/render.py --check
+          git add ci/cluster/oke-gha-phx/manifests/kata-runners ci/cluster/oke-gha-phx/manifests/kata-support
+          git commit -s -m "Promote kata runner image ${RELEASE_TAG} (${DIGEST})"
+          git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:${BRANCH}"
+          gh pr create --base main --head "${BRANCH}" \
+            --title "Promote kata runner image ${RELEASE_TAG}" \
+            --body "Canary run ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID} passed on digest ${DIGEST} (built from ${SOURCE_REVISION}). Merging pins the production kata runners and the pre-pull DaemonSet to this digest via ArgoCD."
